@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net (Default Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    // Validation blueprint for Daily Leaderboard Entry
+    function isValidLeaderboardEntry(data) {
+      return data.userId == request.auth.uid
+        && data.date is string
+        && data.playerName is string
+        && data.completionTime is int;
+    }
+
+    // Validation blueprint for User profile persistence
+    function isValidUserProfile(data) {
+      return data.userId == request.auth.uid;
+    }
+
+    // 2. Daily Leaderboard Access Control (High Hardening)
+    match /daily_leaderboard/{entryId} {
+      // Allow anybody (signed-in or anonymous) to view leaderboard times
+      allow read, list: if true;
+
+      // Allow authenticated creation of leaderboard submission corresponding to their own UID
+      allow create: if isSignedIn() 
+        && isValidId(entryId)
+        && incoming().userId == request.auth.uid
+        && isValidLeaderboardEntry(incoming());
+
+      // Preventing updates or resource tampering once scores are logged
+      allow update, delete: if false;
+    }
+
+    // 3. User Profile Sync & Continuation
+    match /users/{userId} {
+      allow read: if isSignedIn() && userId == request.auth.uid;
+      allow create, update: if isSignedIn() && userId == request.auth.uid && isValidId(userId) && isValidUserProfile(incoming());
+      allow delete: if isSignedIn() && userId == request.auth.uid;
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Shikaku",
+  "description": "A beautiful, minimalist Shikaku logic puzzle game with dynamic levels, tactile interaction, and a smart solver hint engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
