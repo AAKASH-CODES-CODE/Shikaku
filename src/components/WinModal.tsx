@@ -25,6 +25,7 @@ export default function WinModal({
   reducedMotion = false
 }: WinModalProps) {
   const formatTime = (sec: number) => {
+    if (sec === null || sec === undefined || isNaN(sec)) return '--:--';
     const mins = Math.floor(sec / 60);
     const secs = sec % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;

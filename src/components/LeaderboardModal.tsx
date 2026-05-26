@@ -88,7 +88,8 @@ export default function LeaderboardModal({
     }
   };
 
-  const formatTime = (sec: number) => {
+  const formatTime = (sec: number | null | undefined) => {
+    if (sec === null || sec === undefined || isNaN(sec)) return '--:--';
     const mins = Math.floor(sec / 60);
     const secs = sec % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;

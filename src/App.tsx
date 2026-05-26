@@ -145,7 +145,7 @@ export default function App() {
       const localStatsStr = localStorage.getItem('shikaku_stats');
       if (localStatsStr) {
         try {
-          currentLocalStats = JSON.parse(localStatsStr);
+          currentLocalStats = { ...INITIAL_STATS, ...JSON.parse(localStatsStr) };
         } catch (err) {}
       }
 
@@ -181,7 +181,7 @@ export default function App() {
         }
 
         // Overwrite stats with exact server copies to prevent timing/history leaks
-        const targetStats = remote.stats || INITIAL_STATS;
+        const targetStats = { ...INITIAL_STATS, ...(remote.stats || {}) };
         setStats(targetStats);
         localStorage.setItem('shikaku_stats', JSON.stringify(targetStats));
 
@@ -237,7 +237,7 @@ export default function App() {
               setDailyCompleted(false);
             }
 
-            const targetStats = remote.stats || INITIAL_STATS;
+            const targetStats = { ...INITIAL_STATS, ...(remote.stats || {}) };
             setStats(targetStats);
             localStorage.setItem('shikaku_stats', JSON.stringify(targetStats));
 
@@ -376,7 +376,7 @@ export default function App() {
     const storedStats = localStorage.getItem('shikaku_stats');
     if (storedStats) {
       try {
-        const parsed = JSON.parse(storedStats);
+        const parsed = { ...INITIAL_STATS, ...JSON.parse(storedStats) };
         if (!parsed.history || !Array.isArray(parsed.history)) {
           parsed.history = [
             { id: '1', timestamp: Date.now() - 5 * 24 * 3600 * 1000, dateStr: '05/21 12:30', difficulty: 'easy', time: 72 },
@@ -647,11 +647,11 @@ export default function App() {
 
     const updatedStats = {
       ...stats,
-      easySolved: stats.easySolved + (isEasy ? 1 : 0),
-      mediumSolved: stats.mediumSolved + (isMedium ? 1 : 0),
-      hardSolved: stats.hardSolved + (!isEasy && !isMedium ? 1 : 0),
-      currentStreak: stats.currentStreak + 1,
-      bestStreak: Math.max(stats.bestStreak, stats.currentStreak + 1),
+      easySolved: (stats.easySolved || 0) + (isEasy ? 1 : 0),
+      mediumSolved: (stats.mediumSolved || 0) + (isMedium ? 1 : 0),
+      hardSolved: (stats.hardSolved || 0) + (!isEasy && !isMedium ? 1 : 0),
+      currentStreak: (stats.currentStreak || 0) + 1,
+      bestStreak: Math.max((stats.bestStreak || 0), (stats.currentStreak || 0) + 1),
       history: [...(stats.history || []), newHistoryEntry],
     };
 

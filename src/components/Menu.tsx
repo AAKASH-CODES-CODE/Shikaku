@@ -439,7 +439,7 @@ export default function Menu({
 
         <div className="flex flex-col items-center">
           <span className="text-3xl text-neutral-900 dark:text-white font-bold tracking-tight">
-            {stats.easySolved + stats.mediumSolved + stats.hardSolved}
+            {(stats.easySolved || 0) + (stats.mediumSolved || 0) + (stats.hardSolved || 0)}
           </span>
           <span className="text-xs text-neutral-400 dark:text-neutral-500 font-medium uppercase tracking-wider mt-1">Total Completed</span>
         </div>
