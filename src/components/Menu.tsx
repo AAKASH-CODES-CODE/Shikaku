@@ -34,6 +34,7 @@ interface MenuProps {
   campaignLevel: number;
   onStartCampaignLevel: (levelNum: number) => void;
   onExitGame?: () => void;
+  hasCompletedTutorial?: boolean;
 }
 
 export default function Menu({
@@ -49,6 +50,7 @@ export default function Menu({
   campaignLevel,
   onStartCampaignLevel,
   onExitGame,
+  hasCompletedTutorial = false,
 }: MenuProps) {
   const [activeFilter, setActiveFilter] = useState<'all' | 'easy' | 'medium' | 'hard'>('all');
 
@@ -186,9 +188,6 @@ export default function Menu({
         <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-neutral-900 dark:text-white font-sans">
           Shikaku
         </h2>
-        <p className="text-sm md:text-base text-neutral-400 dark:text-neutral-500 font-sans leading-relaxed">
-          An elegant rectangular logic puzzle. Divide the grid into non-overlapping rectangles. Every region must enclose exactly one number, where its cell count equals that number.
-        </p>
       </motion.div>
 
       {/* Campaign Central Terminal */}
@@ -235,40 +234,45 @@ export default function Menu({
       {/* Side-by-Side Launcher Banners */}
       <motion.div
         variants={reducedMotion ? {} : itemVariants}
-        className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full pt-1"
+        className={`grid grid-cols-1 ${hasCompletedTutorial ? '' : 'md:grid-cols-2'} gap-6 w-full pt-1`}
       >
         
         {/* Interactive Tutorial Banner */}
-        <div
-          id="tutorial-banner-card"
-          onClick={onStartTutorial}
-          className="w-full bento-card p-5 md:p-6 flex flex-col justify-between gap-5 cursor-pointer hover:border-[#007AFF] hover:bg-[#007AFF]/[0.02] dark:hover:border-[#0A84FF] dark:hover:bg-[#0A84FF]/[0.01] transition-all hover:scale-[1.01] shadow-sm text-left"
-        >
-          <div className="flex items-start space-x-4">
-            <div className="p-3 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-[#007AFF] dark:text-[#0A84FF]">
-              <Play className="w-6 h-6 fill-current" />
+        {!hasCompletedTutorial && (
+          <div
+            id="tutorial-banner-card"
+            onClick={onStartTutorial}
+            className="w-full bento-card p-5 md:p-6 flex flex-col justify-between gap-5 cursor-pointer hover:border-[#007AFF] hover:bg-[#007AFF]/[0.02] dark:hover:border-[#0A84FF] dark:hover:bg-[#0A84FF]/[0.01] transition-all hover:scale-[1.01] shadow-sm text-left"
+          >
+            <div className="flex items-start space-x-4">
+              <div className="p-3 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-[#007AFF] dark:text-[#0A84FF]">
+                <Play className="w-6 h-6 fill-current" />
+              </div>
+              <div>
+                <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#007AFF] dark:text-[#0A84FF] bg-[#007AFF]/10 dark:bg-[#0A84FF]/10 px-2 py-0.5 rounded">
+                  Tutorial
+                </span>
+                <h3 className="text-lg font-bold text-neutral-900 dark:text-white mt-1.5">
+                  Interactive Tutorial Mode
+                </h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-450 mt-1.5 leading-relaxed">
+                  New to Shikaku? Learn the rules step-by-step, draw your first rectangle, and master clearing invalid cells.
+                </p>
+              </div>
             </div>
-            <div>
-              <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#007AFF] dark:text-[#0A84FF] bg-[#007AFF]/10 dark:bg-[#0A84FF]/10 px-2 py-0.5 rounded">
-                Tutorial
-              </span>
-              <h3 className="text-lg font-bold text-neutral-900 dark:text-white mt-1.5">
-                Interactive Tutorial Mode
-              </h3>
-              <p className="text-xs text-neutral-500 dark:text-neutral-450 mt-1.5 leading-relaxed">
-                New to Shikaku? Learn the rules step-by-step, draw your first rectangle, and master clearing invalid cells.
-              </p>
+            <div className="flex justify-end pt-2 border-t border-neutral-100 dark:border-neutral-900/40">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStartTutorial();
+                }}
+                className="px-5 py-2.5 bg-[#007AFF] hover:bg-[#0A84FF] text-white font-semibold text-xs rounded-xl shadow-sm tracking-tight transition-all active:scale-95 cursor-pointer"
+              >
+                Start Tutorial
+              </button>
             </div>
           </div>
-          <div className="flex justify-end pt-2 border-t border-neutral-100 dark:border-neutral-900/40">
-            <button
-              onClick={onStartTutorial}
-              className="px-5 py-2.5 bg-[#007AFF] hover:bg-[#0A84FF] text-white font-semibold text-xs rounded-xl shadow-sm tracking-tight transition-all active:scale-95 cursor-pointer"
-            >
-              Start Tutorial
-            </button>
-          </div>
-        </div>
+        )}
 
         {/* Daily Challenge Banner */}
         <div
@@ -540,22 +544,6 @@ export default function Menu({
           )}
         </div>
       </motion.div>
-
-      {/* Elegant System Controls (Exit Game / Quit Game) */}
-      {onExitGame && (
-        <motion.div
-          variants={reducedMotion ? {} : itemVariants}
-          className="w-full flex justify-center pt-2"
-        >
-          <button
-            onClick={onExitGame}
-            className="px-8 py-3 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-neutral-500 hover:text-red-500 dark:text-neutral-400 dark:hover:text-red-400 font-bold text-xs rounded-xl shadow-sm tracking-widest uppercase border border-neutral-200/40 dark:border-neutral-800/80 transition-all active:scale-95 cursor-pointer flex items-center gap-2"
-          >
-            <Power className="w-4 h-4 text-red-500 animate-pulse" />
-            <span>Close / Exit Game</span>
-          </button>
-        </motion.div>
-      )}
     </motion.div>
   );
 }

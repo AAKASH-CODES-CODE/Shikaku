@@ -145,6 +145,8 @@ function saveLeaderboardData(data: any[]) {
 // Firestore integration config & Google Cloud Platform Helpers
 const FIREBASE_CONFIG_FILE = path.join(process.cwd(), "firebase-applet-config.json");
 let firebaseProjectId = "photos-6e67c"; // Fallback default
+let firestoreAccessible = true; // Graceful fallback circuit breaker if 403 status is encountered
+
 try {
   if (fs.existsSync(FIREBASE_CONFIG_FILE)) {
     const configRaw = fs.readFileSync(FIREBASE_CONFIG_FILE, "utf-8");
@@ -173,6 +175,9 @@ async function getGcpAccessToken(): Promise<string | null> {
 }
 
 async function deleteFirestoreUserDoc(userId: string) {
+  if (!firestoreAccessible) {
+    return;
+  }
   try {
     const token = await getGcpAccessToken();
     if (!token) {
@@ -191,7 +196,12 @@ async function deleteFirestoreUserDoc(userId: string) {
     if (res.ok) {
       console.log(`Successfully deleted Firestore document for userId '${userId}'.`);
     } else {
-      console.warn(`Firestore REST deletion failed for userId '${userId}'. Status: ${res.status}`);
+      if (res.status === 403) {
+        firestoreAccessible = false;
+        console.log(`Firestore API is not accessible (403 Forbidden). Subsequent Firestore sync operations will be skipped. Local database will continue to operate normally in offline mode.`);
+      } else {
+        console.warn(`Firestore REST deletion failed for userId '${userId}'. Status: ${res.status}`);
+      }
     }
   } catch (err) {
     console.error(`Error deleting Firestore document for '${userId}':`, err);
@@ -199,6 +209,9 @@ async function deleteFirestoreUserDoc(userId: string) {
 }
 
 async function syncFirestoreDeletions(progressMap: Record<string, any>): Promise<boolean> {
+  if (!firestoreAccessible) {
+    return false;
+  }
   const token = await getGcpAccessToken();
   if (!token) {
     return false; // Skip sync check if auth token is not available (such as running locally)
@@ -213,7 +226,12 @@ async function syncFirestoreDeletions(progressMap: Record<string, any>): Promise
     });
 
     if (!res.ok) {
-      console.error(`Failed to retrieve Firestore users for deletion sync. Status: ${res.status}`);
+      if (res.status === 403) {
+        firestoreAccessible = false;
+        console.log(`Firestore API is not accessible (403 Forbidden). Subsequent Firestore sync operations will be skipped. Local database will continue to operate normally in offline mode.`);
+      } else {
+        console.error(`Failed to retrieve Firestore users for deletion sync. Status: ${res.status}`);
+      }
       return false;
     }
 
@@ -392,6 +410,7 @@ app.get("/api/user/progress", (req, res) => {
   res.json({
     exists: true,
     campaignLevel: userProgress.campaignLevel || 1,
+    coins: userProgress.coins !== undefined ? userProgress.coins : 100,
     stats: userProgress.stats || null,
     dailyChallengesCompleted: userProgress.dailyChallengesCompleted || [],
     playerId: userProgress.playerId || generatePlayerId(String(userId), progressMap),
@@ -413,7 +432,7 @@ function generatePlayerId(userId: string, progressMap: Record<string, any>): str
 
 // API: Sync user progress sync data
 app.post("/api/user/progress", (req, res) => {
-  const { userId, campaignLevel, stats, dailyChallengesCompleted, displayName } = req.body;
+  const { userId, campaignLevel, coins, stats, dailyChallengesCompleted, displayName } = req.body;
   if (!userId) {
     return res.status(400).json({ error: "Missing userId in body" });
   }
@@ -424,6 +443,7 @@ app.post("/api/user/progress", (req, res) => {
   progressMap[String(userId)] = {
     ...existing,
     campaignLevel: typeof campaignLevel === "number" ? campaignLevel : existing.campaignLevel || 1,
+    coins: typeof coins === "number" ? coins : (existing.coins !== undefined ? existing.coins : 100),
     stats: stats || existing.stats || {},
     dailyChallengesCompleted: Array.isArray(dailyChallengesCompleted) ? dailyChallengesCompleted : existing.dailyChallengesCompleted || [],
     displayName: displayName || existing.displayName || 'Player',
@@ -500,89 +520,6 @@ app.get("/api/user/friends", (req, res) => {
   res.json(friendsList);
 });
 
-// API: Admin - Get all users
-app.get("/api/admin/users", async (req, res) => {
-  const progressMap = getUserProgressMap();
-  
-  // Prune any users locally that were deleted on Firestore
-  const dbChanged = await syncFirestoreDeletions(progressMap);
-  if (dbChanged) {
-    saveUserProgressMap(progressMap);
-  }
-
-  const allUsers = Object.entries(progressMap).map(([uid, data]) => ({
-    userId: uid,
-    playerId: data.playerId,
-    displayName: data.displayName,
-    campaignLevel: data.campaignLevel,
-    stats: data.stats,
-    dailyChallengesCompleted: data.dailyChallengesCompleted,
-    friends: data.friends,
-  }));
-  res.json(allUsers);
-});
-
-// API: Admin - Update user level
-app.post("/api/admin/users/:userId/level", (req, res) => {
-  const { userId } = req.params;
-  const { level } = req.body;
-  if (typeof level !== 'number') {
-    return res.status(400).json({ error: "Missing or invalid level" });
-  }
-
-  const progressMap = getUserProgressMap();
-  if (!progressMap[String(userId)]) {
-    return res.status(404).json({ error: "User not found" });
-  }
-
-  progressMap[String(userId)].campaignLevel = level;
-  saveUserProgressMap(progressMap);
-
-  res.json({ success: true, newLevel: level });
-});
-
-// API: Admin - Delete user
-app.delete("/api/admin/users/:userId", async (req, res) => {
-  const { userId } = req.params;
-  const progressMap = getUserProgressMap();
-  if (!progressMap[String(userId)]) {
-    return res.status(404).json({ error: "User not found" });
-  }
-
-  // Get user's playerId to remove them from other players' friends lists
-  const userPlayerId = progressMap[String(userId)].playerId;
-
-  // Delete from progress map
-  delete progressMap[String(userId)];
-
-  // Clean up references from other users' friends lists
-  if (userPlayerId) {
-    Object.keys(progressMap).forEach((uid) => {
-      if (Array.isArray(progressMap[uid].friends)) {
-        progressMap[uid].friends = progressMap[uid].friends.filter(
-          (fid: string) => fid !== userPlayerId
-        );
-      }
-    });
-  }
-
-  saveUserProgressMap(progressMap);
-
-  // Clean up their leaderboard scores
-  try {
-    let leaderboard = getLeaderboardData();
-    leaderboard = leaderboard.filter(e => e.userId !== userId);
-    saveLeaderboardData(leaderboard);
-  } catch (err) {
-    console.error("Failed to clean up leaderboard data for deleted user", err);
-  }
-
-  // Sync delete from Firestore too
-  await deleteFirestoreUserDoc(userId);
-
-  res.json({ success: true, message: `User ${userId} deleted successfully` });
-});
-
 // Vite Middleware integration for local development asset building & hot serving
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
@@ -605,3 +542,5 @@ async function startServer() {
 }
 
 startServer();
+
+export default app;

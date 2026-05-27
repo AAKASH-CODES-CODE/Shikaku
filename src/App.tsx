@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Sun, Moon, CheckCircle2, AlertTriangle, HelpCircle, ArrowLeft, Play, Save, Settings, Users, Shield, Power, LogOut } from 'lucide-react';
+import { Sun, Moon, CheckCircle2, AlertTriangle, HelpCircle, ArrowLeft, Play, Save, Settings, Users, Shield, Power, LogOut, Coins, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Header from './components/Header';
 import Menu from './components/Menu';
@@ -9,7 +9,6 @@ import WinModal from './components/WinModal';
 import LeaderboardModal from './components/LeaderboardModal';
 import SettingsModal from './components/SettingsModal';
 import PlayerProfileModal from './components/PlayerProfileModal';
-import AdminModal from './components/AdminModal';
 import { generateLevel } from './utils/shikakuGenerator';
 import { BoardRectangle, Difficulty, LevelData } from './types';
 import { sfx } from './utils/audio';
@@ -123,13 +122,25 @@ export default function App() {
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isProfileOpen, setIsProfileOpen] = useState<boolean>(false);
-  const [isAdminOpen, setIsAdminOpen] = useState<boolean>(false);
   const [userProfile, setUserProfile] = useState<any>(getGoogleProfile());
   const [campaignLevel, setCampaignLevel] = useState<number>(() => {
     const saved = localStorage.getItem('shikaku_campaign_level');
     return saved ? parseInt(saved, 10) : 1;
   });
   const [isCampaignMode, setIsCampaignMode] = useState<boolean>(false);
+  const [hasCompletedTutorial, setHasCompletedTutorial] = useState<boolean>(() => {
+    return localStorage.getItem('shikaku_tutorial_completed') === 'true';
+  });
+
+  // Coin System state hooks
+  const [coins, setCoins] = useState<number>(() => {
+    const saved = localStorage.getItem('shikaku_coins');
+    return saved !== null ? parseInt(saved, 10) : 100;
+  });
+  const [earnedCoins, setEarnedCoins] = useState<number>(0);
+  const [isNewBestTime, setIsNewBestTime] = useState<boolean>(false);
+  const [showInsufficientCoinsToast, setShowInsufficientCoinsToast] = useState<boolean>(false);
+  const [showDailyBonusToast, setShowDailyBonusToast] = useState<boolean>(false);
 
   // Statistics
   const [stats, setStats] = useState(INITIAL_STATS);
@@ -184,6 +195,11 @@ export default function App() {
         const targetStats = { ...INITIAL_STATS, ...(remote.stats || {}) };
         setStats(targetStats);
         localStorage.setItem('shikaku_stats', JSON.stringify(targetStats));
+
+        // Overwrite coins
+        const targetCoins = remote.coins !== undefined ? remote.coins : 100;
+        setCoins(targetCoins);
+        localStorage.setItem('shikaku_coins', String(targetCoins));
 
         // Confirm sync back to server so clean profile copy is maintained
         await uploadUserProgress(profile.userId, targetLvl, targetStats);
@@ -241,6 +257,11 @@ export default function App() {
             setStats(targetStats);
             localStorage.setItem('shikaku_stats', JSON.stringify(targetStats));
 
+            // Overwrite coins
+            const targetCoins = remote.coins !== undefined ? remote.coins : 100;
+            setCoins(targetCoins);
+            localStorage.setItem('shikaku_coins', String(targetCoins));
+
             // Keep in sync
             await uploadUserProgress(firebaseUser.uid, targetLvl, targetStats);
           }
@@ -259,6 +280,8 @@ export default function App() {
           setCampaignLevel(1);
           setStats(INITIAL_STATS);
           setDailyCompleted(false);
+          setCoins(100);
+          localStorage.setItem('shikaku_coins', '100');
         } else if (!prevProfile && updatedProfile) {
           // Google login
           syncWithServer(updatedProfile);
@@ -273,6 +296,46 @@ export default function App() {
       window.removeEventListener('shikaku_auth_changed', handler);
     };
   }, [todayDateStr]);
+
+  // Synchronize user progress back to Firestore when coins, levels, or stats are mutated locally
+  useEffect(() => {
+    if (userProfile && userProfile.userId) {
+      const handler = setTimeout(() => {
+        uploadUserProgress(userProfile.userId, campaignLevel, stats);
+      }, 1500); // 1.5s debounce to batch consecutive changes (e.g. daily rewards, hint spending)
+      return () => clearTimeout(handler);
+    }
+  }, [coins, campaignLevel, stats, userProfile?.userId]);
+
+  // Periodically check server database / Firestore to dynamically overlay changes requested by administrator via Firebase
+  useEffect(() => {
+    if (!userProfile?.userId) return;
+    const interval = setInterval(async () => {
+      try {
+        const remote = await fetchUserProgress(userProfile.userId);
+        if (remote && remote.exists) {
+          if (remote.campaignLevel && remote.campaignLevel !== campaignLevel) {
+            setCampaignLevel(remote.campaignLevel);
+            localStorage.setItem('shikaku_campaign_level', String(remote.campaignLevel));
+          }
+          if (remote.coins !== undefined && remote.coins !== coins) {
+            setCoins(remote.coins);
+            localStorage.setItem('shikaku_coins', String(remote.coins));
+          }
+          if (remote.stats) {
+            const targetStats = { ...INITIAL_STATS, ...remote.stats };
+            if (JSON.stringify(targetStats) !== JSON.stringify(stats)) {
+              setStats(targetStats);
+              localStorage.setItem('shikaku_stats', JSON.stringify(targetStats));
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to poll user progress updates from server:", err);
+      }
+    }, 12000); // Poll every 12 seconds
+    return () => clearInterval(interval);
+  }, [userProfile?.userId, campaignLevel, coins, stats]);
 
   // Hint & Winning Cascade visual controls
   const [hintFlashRect, setHintFlashRect] = useState<BoardRectangle | null>(null);
@@ -356,6 +419,26 @@ export default function App() {
 
   // 1. Initial configuration load (Theme, Solved records, Resumable state)
   useEffect(() => {
+    // Check Daily Login Bonus
+    try {
+      const today = new Date().toDateString();
+      const lastLogin = localStorage.getItem('shikaku_last_login_bonus');
+      if (lastLogin !== today) {
+        setCoins((prev) => {
+          const updated = prev + 10;
+          localStorage.setItem('shikaku_coins', String(updated));
+          return updated;
+        });
+        localStorage.setItem('shikaku_last_login_bonus', today);
+        setShowDailyBonusToast(true);
+        setTimeout(() => {
+          setShowDailyBonusToast(false);
+        }, 4500);
+      }
+    } catch (e) {
+      console.error("Daily bonus calculation failed:", e);
+    }
+
     // Theme Preference
     const storedTheme = localStorage.getItem('shikaku_dark_mode');
     if (storedTheme) {
@@ -466,41 +549,10 @@ export default function App() {
     };
   }, [gameState, isWinningCascade, showWinModal]);
 
-  // 2b. Inactivity Auto-Hint Timer Loop
+  // 2b. Inactivity Auto-Hint Timer Loop - Disabled
   useEffect(() => {
-    if (gameState !== 'playing' || isWinningCascade || showWinModal) {
-      setInactivitySeconds(0);
-      return;
-    }
-
-    const resetInactivity = () => {
-      setInactivitySeconds(0);
-    };
-
-    // Monitor clicks, movement, keys, or touches anywhere to keep track of activity
-    const activityEvents = ['mousedown', 'mousemove', 'keydown', 'touchstart'];
-    activityEvents.forEach((event) => {
-      window.addEventListener(event, resetInactivity, { passive: true });
-    });
-
-    const interval = setInterval(() => {
-      setInactivitySeconds((prev) => {
-        const next = prev + 1;
-        if (next >= 30) {
-          handleHint();
-          return 0;
-        }
-        return next;
-      });
-    }, 1000);
-
-    return () => {
-      clearInterval(interval);
-      activityEvents.forEach((event) => {
-        window.removeEventListener(event, resetInactivity);
-      });
-    };
-  }, [gameState, isWinningCascade, showWinModal, boardRectangles]);
+    setInactivitySeconds(0);
+  }, [gameState]);
 
   // 3. Auto-detect logical Shikaku victory state on changes in boardRectangles
   useEffect(() => {
@@ -544,6 +596,8 @@ export default function App() {
       if (gameState === 'tutorial') {
         if (tutorialStep === 4) {
           setTutorialStep(5);
+          setHasCompletedTutorial(true);
+          localStorage.setItem('shikaku_tutorial_completed', 'true');
           sfx.playWinCascade(isMuted);
         }
       } else {
@@ -656,22 +710,48 @@ export default function App() {
     };
 
     // Calculate best record time
+    let gotNewBest = false;
     if (isEasy) {
       if (stats.bestEasyTime === null || timer < stats.bestEasyTime) {
         updatedStats.bestEasyTime = timer;
+        gotNewBest = true;
       }
     } else if (isMedium) {
       if (stats.bestMediumTime === null || timer < stats.bestMediumTime) {
         updatedStats.bestMediumTime = timer;
+        gotNewBest = true;
       }
     } else {
       if (stats.bestHardTime === null || timer < stats.bestHardTime) {
         updatedStats.bestHardTime = timer;
+        gotNewBest = true;
       }
     }
+    setIsNewBestTime(gotNewBest);
 
     setStats(updatedStats);
     localStorage.setItem('shikaku_stats', JSON.stringify(updatedStats));
+
+    // Calculate level progression coins reward
+    let rewarded = 10;
+    if (isCampaignMode) {
+      // Scales higher with level
+      rewarded = 10 + campaignLevel * 3;
+    } else {
+      if (difficulty === 'easy') {
+        rewarded = 10;
+      } else if (difficulty === 'medium') {
+        rewarded = 15;
+      } else {
+        rewarded = 25;
+      }
+    }
+    setEarnedCoins(rewarded);
+    setCoins((prev) => {
+      const updated = prev + rewarded;
+      localStorage.setItem('shikaku_coins', String(updated));
+      return updated;
+    });
 
     if (isCampaignMode) {
       const nextLevel = campaignLevel + 1;
@@ -717,6 +797,7 @@ export default function App() {
     setIsDailyChallenge(false);
     setIsCampaignMode(false);
     setJustCompletedTime(null);
+    setIsNewBestTime(false);
     const freshLevel = generateLevel(selectedDiff);
     
     setDifficulty(selectedDiff);
@@ -747,6 +828,7 @@ export default function App() {
     setIsDailyChallenge(false);
     setIsCampaignMode(true);
     setJustCompletedTime(null);
+    setIsNewBestTime(false);
     
     // Symmetrical gradient progression of grids
     let selectedDiff: Difficulty = 'easy';
@@ -781,6 +863,7 @@ export default function App() {
     setIsDailyChallenge(true);
     setIsCampaignMode(false);
     setJustCompletedTime(null);
+    setIsNewBestTime(false);
     setDifficulty(dailyDifficulty);
     setLevelData(freshLevel);
     setBoardRectangles([]);
@@ -925,12 +1008,6 @@ export default function App() {
 
     // Rule A: If user has drawn incorrect rectangles, highlight ONE and suggest removal
     const incorrectRect = boardRectangles.find((r) => !r.isValid);
-    if (incorrectRect) {
-      // Flash outline in yellow/orange and trigger haptic rumble to represent correct actions
-      setHintFlashRect(incorrectRect);
-      sfx.playErrorThud(isMuted);
-      return;
-    }
 
     // Rule B: If all current rects are correct, find ONE clue that has only ONE possible
     // logic remaining or simply reveal the Ground-Truth missing solution rectangle!
@@ -944,6 +1021,35 @@ export default function App() {
             drawn.endY === sol.endY
         )
     );
+
+    // If no hint is available to give, return silently
+    if (!incorrectRect && !missingRect) {
+      return;
+    }
+
+    // Check if the user has enough coins (20 coins per hint)
+    if (coins < 20) {
+      setShowInsufficientCoinsToast(true);
+      setTimeout(() => {
+        setShowInsufficientCoinsToast(false);
+      }, 3500);
+      sfx.playErrorThud(isMuted);
+      return;
+    }
+
+    // Deduct 20 coins on hint activation
+    setCoins((prev) => {
+      const updated = Math.max(0, prev - 20);
+      localStorage.setItem('shikaku_coins', String(updated));
+      return updated;
+    });
+
+    if (incorrectRect) {
+      // Flash outline in yellow/orange and trigger haptic rumble to represent correct actions
+      setHintFlashRect(incorrectRect);
+      sfx.playErrorThud(isMuted);
+      return;
+    }
 
     if (missingRect) {
       const simulatedRect: BoardRectangle = {
@@ -972,7 +1078,16 @@ export default function App() {
     if (gameState === 'playing') {
       setShowConfirmModal('back-to-menu');
     } else if (gameState === 'tutorial') {
-      setShowConfirmModal('tutorial-back');
+      if (tutorialStep === 5) {
+        setHasCompletedTutorial(true);
+        localStorage.setItem('shikaku_tutorial_completed', 'true');
+        setGameState('menu');
+        setHintFlashRect(null);
+        setIsWinningCascade(false);
+        setShowWinModal(false);
+      } else {
+        setShowConfirmModal('tutorial-back');
+      }
     } else {
       setGameState('menu');
       setHintFlashRect(null);
@@ -1012,16 +1127,8 @@ export default function App() {
       )}
 
       <div className="flex flex-col h-[100dvh] w-full overflow-hidden">
-      {/* GLOBAL TOP CREDITS */}
-      {gameState === 'menu' && (
-        <div className="w-full text-center py-2 bg-neutral-100 dark:bg-[#1C1C1E] border-b border-neutral-200 dark:border-neutral-800 shrink-0 select-none z-50">
-          <span className="text-[10px] sm:text-xs font-bold tracking-[0.25em] text-neutral-500 dark:text-neutral-400 uppercase font-mono">
-            Developed By Aakash
-          </span>
-        </div>
-      )}
 
-      <div id="shikaku-applet" className={`flex-1 min-h-0 overflow-y-auto w-full max-w-[1400px] mx-auto flex flex-col justify-between transition-colors duration-200 ${gameState === 'playing' ? 'p-2 md:p-4 lg:p-6' : 'p-4 md:p-6 lg:p-8'}`}>
+      <div id="shikaku-applet" className={`flex-1 min-h-0 overflow-x-hidden overflow-y-auto w-full max-w-[1400px] mx-auto flex flex-col justify-between transition-colors duration-200 ${gameState === 'playing' ? 'p-2 md:p-4 lg:p-6' : 'p-4 md:p-6 lg:p-8'}`}>
       {gameState === 'playing' && levelData ? (
         <div className="flex flex-col h-full w-full gap-2 md:gap-4 lg:gap-6 items-center">
           {/* Header Card */}
@@ -1035,6 +1142,7 @@ export default function App() {
               onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
               onOpenSettings={() => setIsSettingsOpen(true)}
               isCampaignMode={isCampaignMode}
+              coins={coins}
             />
           </div>
 
@@ -1489,81 +1597,78 @@ export default function App() {
       ) : (
         <>
           {/* Header layout for main menu selection screen */}
-          <header className="w-full flex justify-between items-center px-6 py-4 border-b border-transparent">
-            <div className="flex items-center gap-3">
+          <header className="w-full flex justify-between items-center px-6 py-4 border-b border-transparent z-40 select-none">
+            {/* Top Left: Small profile photo circle (no name) next to coin indicator */}
+            <div className="flex items-center gap-2.5">
               {userProfile ? (
                 <div 
-                  onClick={() => setIsSettingsOpen(true)}
-                  className="flex items-center gap-2 px-3 py-1 bg-emerald-500/[0.05] dark:bg-emerald-500/[0.03] border border-emerald-500/25 rounded-full cursor-pointer hover:bg-emerald-500/[0.09] transition-all text-emerald-600 dark:text-emerald-400"
+                  onClick={() => setIsProfileOpen(true)}
+                  title="View your profile"
+                  className="w-9 h-9 rounded-full overflow-hidden border-2 border-[#007AFF] dark:border-[#0A84FF] cursor-pointer hover:scale-105 active:scale-95 transition-all shadow-[0_2px_6px_rgba(0,122,255,0.2)] flex items-center justify-center bg-[#007AFF]/10"
                 >
                   {userProfile.picture ? (
                     <img 
                       src={userProfile.picture} 
-                      alt={userProfile.name} 
+                      alt="Profile" 
                       referrerPolicy="no-referrer"
-                      className="w-4 h-4 rounded-full border border-emerald-500/20"
+                      className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-[9px]">
+                    <div className="w-full h-full bg-gradient-to-br from-[#007AFF] to-[#0A84FF] text-white flex items-center justify-center font-bold text-sm">
                       {userProfile.name.charAt(0).toUpperCase()}
                     </div>
                   )}
-                  <span className="text-[10px] font-bold font-mono tracking-tight">{userProfile.name}</span>
                 </div>
               ) : (
                 <div 
                   onClick={() => setIsSettingsOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-900 dark:hover:bg-neutral-800 border border-neutral-200/60 dark:border-neutral-800 rounded-full cursor-pointer transition-all text-neutral-500 dark:text-neutral-400"
+                  title="Connect account"
+                  className="w-9 h-9 rounded-full bg-white dark:bg-[#1C1C1E] border border-neutral-200/80 dark:border-neutral-800/80 flex items-center justify-center text-neutral-450 dark:text-neutral-550 cursor-pointer hover:border-amber-500/50 hover:text-amber-550 dark:hover:text-amber-450 hover:bg-neutral-50 dark:hover:bg-neutral-900 active:scale-95 hover:scale-105 transition-all shadow-sm"
                 >
-                  <div className="w-1.5 h-1.5 rounded-full bg-amber-550 animate-pulse" />
-                  <span className="text-[10px] font-bold font-mono tracking-tight uppercase">Guest Solver (Connect)</span>
+                  <User className="w-4.5 h-4.5" />
                 </div>
               )}
+
+              {/* Coins Balance Indicator */}
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/[0.08] dark:bg-amber-500/[0.06] border border-amber-500/25 rounded-full text-amber-600 dark:text-amber-400 font-mono text-xs font-bold select-none leading-none shadow-[0_1px_2px_rgba(245,158,11,0.03)] h-9">
+                <Coins className="w-4 h-4 text-amber-500 fill-amber-500 animate-[pulse_2.5s_infinite]" />
+                <span>{coins} COIN</span>
+              </div>
             </div>
             
-            <div className="flex space-x-2">
+            {/* Top Right: Dark/Light Mode, Social Hub, and Settings (positioned rightmost, leftward order) */}
+            <div className="flex items-center space-x-1 sm:space-x-2">
+              {/* Theme select (Left) */}
               <button
                 id="btn-menu-theme"
                 onClick={() => setIsDarkMode(!isDarkMode)}
-                className="p-2.5 rounded-full text-neutral-400 hover:text-neutral-800 dark:text-neutral-500 dark:hover:text-white transition-all cursor-pointer"
+                title={isDarkMode ? 'Enable Light Mode' : 'Enable Dark Mode'}
+                aria-label="Toggle Theme"
+                className="p-2 sm:p-2.5 rounded-xl text-neutral-400 hover:text-neutral-800 dark:text-neutral-500 dark:hover:text-white bg-white dark:bg-[#1C1C1E] border border-neutral-200/60 dark:border-neutral-800 hover:shadow-sm active:scale-95 cursor-pointer transition-all h-9 flex items-center justify-center"
               >
-                {isDarkMode ? <Sun className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5" />}
+                {isDarkMode ? <Sun className="w-4.5 h-4.5 text-amber-500" /> : <Moon className="w-4.5 h-4.5 text-neutral-600" />}
               </button>
+
+              {/* Social Hub (Center) */}
+              <button
+                id="btn-menu-profile"
+                onClick={() => setIsProfileOpen(true)}
+                title="Social Hub & Leaderboard"
+                aria-label="Social Hub"
+                className="p-2 sm:p-2.5 rounded-xl text-neutral-400 hover:text-[#007AFF] dark:text-neutral-500 dark:hover:text-[#0A84FF] bg-white dark:bg-[#1C1C1E] border border-neutral-200/60 dark:border-neutral-800 hover:shadow-sm active:scale-95 cursor-pointer transition-all h-9 flex items-center justify-center"
+              >
+                <Users className="w-4.5 h-4.5" />
+              </button>
+
+              {/* Settings (Rightmost) */}
               <button
                 id="btn-menu-settings"
                 onClick={() => setIsSettingsOpen(true)}
                 title="Settings"
                 aria-label="Settings"
-                className="p-2.5 rounded-full text-neutral-400 hover:text-neutral-800 dark:text-neutral-500 dark:hover:text-white transition-all cursor-pointer"
+                className="p-2 sm:p-2.5 rounded-xl text-neutral-400 hover:text-neutral-800 dark:text-neutral-500 dark:hover:text-white bg-white dark:bg-[#1C1C1E] border border-neutral-200/60 dark:border-neutral-800 hover:shadow-sm active:scale-95 cursor-pointer transition-all h-9 flex items-center justify-center"
               >
                 <Settings className="w-4.5 h-4.5 text-neutral-500 dark:text-neutral-400" />
-              </button>
-              <button
-                id="btn-menu-profile"
-                onClick={() => setIsProfileOpen(true)}
-                title="Player Profile"
-                aria-label="Player Profile"
-                className="p-2.5 rounded-full text-neutral-400 hover:text-orange-500 dark:text-neutral-500 dark:hover:text-orange-400 transition-all cursor-pointer"
-              >
-                <Users className="w-4.5 h-4.5" />
-              </button>
-              <button
-                id="btn-menu-admin"
-                onClick={() => setIsAdminOpen(true)}
-                title="Admin Dashboard"
-                aria-label="Admin Dashboard"
-                className="p-2.5 rounded-full text-neutral-400 hover:text-red-500 dark:text-neutral-500 dark:hover:text-red-400 transition-all cursor-pointer"
-              >
-                <Shield className="w-4.5 h-4.5" />
-              </button>
-              <button
-                id="btn-menu-exit"
-                onClick={() => setShowConfirmModal('exit-app')}
-                title="Exit Game"
-                aria-label="Exit Game"
-                className="p-2.5 rounded-full text-neutral-400 hover:text-red-500 dark:text-neutral-500 dark:hover:text-red-400 transition-all cursor-pointer"
-              >
-                <Power className="w-4.5 h-4.5 text-red-500" />
               </button>
             </div>
           </header>
@@ -1582,6 +1687,7 @@ export default function App() {
               campaignLevel={campaignLevel}
               onStartCampaignLevel={handleStartCampaignLevel}
               onExitGame={() => setShowConfirmModal('exit-app')}
+              hasCompletedTutorial={hasCompletedTutorial}
             />
           </main>
 
@@ -1605,6 +1711,11 @@ export default function App() {
           setReducedMotion(newValue);
           localStorage.setItem('shikaku_reduced_motion', String(newValue));
         }}
+        hasCompletedTutorial={hasCompletedTutorial}
+        onResetTutorial={() => {
+          localStorage.removeItem('shikaku_tutorial_completed');
+          setHasCompletedTutorial(false);
+        }}
       />
 
       {/* Win Modal Layer */}
@@ -1622,6 +1733,9 @@ export default function App() {
             setIsLeaderboardOpen(true);
           }}
           reducedMotion={reducedMotion}
+          earnedCoins={earnedCoins}
+          isNewBestTime={isNewBestTime}
+          userProfile={userProfile}
         />
       </AnimatePresence>
 
@@ -1663,15 +1777,51 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Insufficient Coins Toast */}
+      <AnimatePresence>
+        {showInsufficientCoinsToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 30, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9, transition: { duration: 0.15 } }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-55 flex items-center gap-3 px-4 py-3 bg-red-600/95 text-white rounded-2xl shadow-xl border border-red-500/20 font-sans text-xs font-semibold tracking-tight backdrop-blur-sm select-none max-w-sm text-center"
+          >
+            <div className="flex items-center gap-2 text-left">
+              <span className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center text-white font-black text-xs shrink-0 select-none shadow-sm animate-bounce">
+                !
+              </span>
+              <span>Need 20 COINs for a hint! Solve levels to earn.</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Daily Login Bonus Toast */}
+      <AnimatePresence>
+        {showDailyBonusToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -45, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -30, scale: 0.9, transition: { duration: 0.2 } }}
+            className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2.5 px-4 py-3 bg-neutral-900/95 dark:bg-neutral-800/95 text-white rounded-2xl shadow-2xl border border-amber-500/25 font-sans text-xs font-semibold tracking-tight backdrop-blur-md select-none"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="p-1 rounded-lg bg-amber-500/10 text-amber-500">
+                <Coins className="w-4 h-4 fill-amber-500" />
+              </div>
+              <div className="text-left">
+                <div className="text-[10px] uppercase font-bold tracking-wider text-amber-500">Daily Login Bonus</div>
+                <div className="text-xs font-bold text-amber-450 mt-0.5">+10 COINs rewarded!</div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <PlayerProfileModal
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
         userProfile={userProfile}
-      />
-      
-      <AdminModal
-        isOpen={isAdminOpen}
-        onClose={() => setIsAdminOpen(false)}
       />
 
       {/* GLOBAL BOTTOM CREDITS */}
@@ -1690,6 +1840,7 @@ export default function App() {
           <div className="text-[10px] sm:text-xs">Version 1.0</div>
         </div>
       )}
+
       </div>{/* End of shikaku-applet */}
     </div>
 

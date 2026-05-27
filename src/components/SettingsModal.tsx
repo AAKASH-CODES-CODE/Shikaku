@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Volume2, VolumeX, Sun, Moon, Activity, Zap, User, LogOut, ShieldCheck } from 'lucide-react';
+import { X, Volume2, VolumeX, Sun, Moon, Activity, Zap, User, LogOut, ShieldCheck, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GOOGLE_CLIENT_ID, GoogleUserProfile, getGoogleProfile, decodeJwt, saveGoogleProfile, logoutGoogleProfile } from '../utils/leaderboardService';
 
@@ -12,6 +12,8 @@ interface SettingsModalProps {
   onToggleDarkMode: () => void;
   reducedMotion: boolean;
   onToggleReducedMotion: () => void;
+  hasCompletedTutorial?: boolean;
+  onResetTutorial?: () => void;
 }
 
 export default function SettingsModal({
@@ -23,9 +25,12 @@ export default function SettingsModal({
   onToggleDarkMode,
   reducedMotion,
   onToggleReducedMotion,
+  hasCompletedTutorial = false,
+  onResetTutorial,
 }: SettingsModalProps) {
   const [profile, setProfile] = useState<GoogleUserProfile | null>(getGoogleProfile());
   const [authError, setAuthError] = useState<string | null>(null);
+  const [showAbout, setShowAbout] = useState(false);
 
   // Listen for login/logout profile changes dynamically
   useEffect(() => {
@@ -281,6 +286,74 @@ export default function SettingsModal({
                     }`}
                   />
                 </button>
+              </div>
+
+              {/* About Option */}
+              <div className="pt-4 border-t border-neutral-100 dark:border-neutral-800/80">
+                <button
+                  onClick={() => setShowAbout(!showAbout)}
+                  className="w-full flex items-center justify-between py-1 text-left focus:outline-none cursor-pointer group"
+                >
+                  <div className="flex items-center gap-2">
+                    <Info className="w-4 h-4 text-[#007AFF] dark:text-[#0A84FF]" />
+                    <span className="font-semibold text-neutral-800 dark:text-neutral-200 text-sm">About Shikaku</span>
+                  </div>
+                  <div>
+                    {showAbout ? (
+                      <ChevronUp className="w-4 h-4 text-neutral-400 group-hover:text-neutral-600 dark:group-hover:text-neutral-350 transition-colors" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-neutral-400 group-hover:text-neutral-600 dark:group-hover:text-neutral-350 transition-colors" />
+                    )}
+                  </div>
+                </button>
+                
+                <AnimatePresence initial={false}>
+                  {showAbout && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0, marginTop: 0 }}
+                      animate={{ height: 'auto', opacity: 1, marginTop: 8 }}
+                      exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                      transition={{ duration: 0.2, ease: 'easeInOut' }}
+                      className="overflow-hidden"
+                    >
+                      <div className="p-3 bg-neutral-50 dark:bg-neutral-950/25 border border-neutral-150 dark:border-neutral-850/80 rounded-2xl text-xs text-neutral-500 dark:text-neutral-400 space-y-2.5 leading-relaxed">
+                        <p>
+                          An elegant rectangular logic puzzle. Divide the grid into non-overlapping rectangles. Every region must enclose exactly one number, where its cell count equals that number.
+                        </p>
+                        
+                        <div className="pt-2.5 border-t border-neutral-150/40 dark:border-neutral-800/40 space-y-1.5 font-mono text-[10px]">
+                          <div className="flex justify-between items-center bg-white dark:bg-neutral-900 border border-neutral-150/40 dark:border-neutral-800/40 px-2.5 py-1.5 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                            <span className="font-medium text-neutral-400">Developer</span>
+                            <span className="font-bold text-neutral-800 dark:text-neutral-200 uppercase tracking-wide">Aakash kumar</span>
+                          </div>
+                          <div className="flex justify-between items-center bg-white dark:bg-neutral-900 border border-neutral-150/40 dark:border-neutral-800/40 px-2.5 py-1.5 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                            <span className="font-medium text-neutral-400">Instagram</span>
+                            <a href="https://instagram.com/_itz_akash_3" target="_blank" rel="noopener noreferrer" className="font-bold text-[#E1306C] hover:text-[#C13584] transition-colors hover:underline">_itz_akash_3</a>
+                          </div>
+                          <div className="flex justify-between items-center bg-white dark:bg-neutral-900 border border-neutral-150/40 dark:border-neutral-800/40 px-2.5 py-1.5 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                            <span className="font-medium text-neutral-400">Email</span>
+                            <a href="mailto:fake.akash07@gmail.com" className="font-bold text-orange-500 hover:text-orange-600 transition-colors hover:underline">fake.akash07@gmail.com</a>
+                          </div>
+                          <div className="flex justify-between items-center bg-white dark:bg-neutral-900 border border-neutral-150/40 dark:border-neutral-800/40 px-2.5 py-1.5 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                            <span className="font-medium text-neutral-400">Version</span>
+                            <span className="font-semibold text-neutral-600 dark:text-neutral-450">1.0</span>
+                          </div>
+                          {hasCompletedTutorial && onResetTutorial && (
+                            <div className="flex justify-between items-center bg-red-50/50 dark:bg-red-950/10 border border-red-150/30 dark:border-red-900/20 px-2.5 py-1.5 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                              <span className="font-medium text-red-400 dark:text-red-500 font-bold">Tutorial Done</span>
+                              <button
+                                onClick={onResetTutorial}
+                                className="px-2 py-0.5 text-[9px] font-bold text-red-500 hover:text-red-650 bg-red-100/40 hover:bg-red-100/70 border border-red-200/50 rounded-lg cursor-pointer active:scale-95 transition-all"
+                              >
+                                Reset & Show Banner
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
 

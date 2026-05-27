@@ -118,12 +118,12 @@ export default function Toolbar({
         >
           <Lightbulb className={`w-4 h-4 md:w-4.5 md:h-4.5 ${!disabledAll ? 'text-amber-400 fill-amber-400' : ''}`} />
           <div className="flex flex-col justify-center items-start leading-none">
-            <span className="text-sm md:text-base">Use Hint</span>
-            {inactivitySeconds >= 10 && !disabledAll && (
-              <span className="text-[9px] font-bold font-mono text-amber-400 dark:text-amber-500 animate-pulse block tracking-wide mt-0.5">
-                Auto in {30 - inactivitySeconds}s
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-semibold">Use Hint</span>
+              <span className="text-[9px] font-bold font-mono px-1 py-0.5 rounded bg-amber-500/[0.12] dark:bg-amber-500/[0.08] text-amber-600 dark:text-amber-400 border border-amber-500/20 leading-none">
+                -20c
               </span>
-            )}
+            </div>
           </div>
         </motion.button>
       </div>

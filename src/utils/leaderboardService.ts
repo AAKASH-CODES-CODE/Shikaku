@@ -74,10 +74,58 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
+// Helper to determine if an OIDC JWT ID Token is expired
+export function isTokenExpired(token: string): boolean {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return true;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      window.atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    const parsed = JSON.parse(jsonPayload);
+    if (!parsed.exp) return true;
+    const currentTime = Math.floor(Date.now() / 1000);
+    // Use a 10 seconds buffer
+    return parsed.exp < (currentTime + 10);
+  } catch {
+    return true;
+  }
+}
+
 // Kick off Firebase Auth session automatically
 export async function initializeAuthSession(): Promise<any> {
   const googleProfile = getGoogleProfile();
   if (googleProfile && googleProfile.idToken) {
+    if (isTokenExpired(googleProfile.idToken)) {
+      console.log("Cached Google ID token is expired. Falling back to anonymous or clean visitor state silently.");
+      // Silently remove token reference to prevent infinite expiry loops, keeping profile name for local displays
+      try {
+        const stored = getGoogleProfile();
+        if (stored && stored.idToken === googleProfile.idToken) {
+          delete stored.idToken;
+          localStorage.setItem('shikaku_google_user', JSON.stringify(stored));
+        }
+      } catch (e) {}
+
+      const localLvl = Number(localStorage.getItem('shikaku_campaign_level') || '1');
+      if (localLvl > 1) {
+        try {
+          const userCredential = await signInAnonymously(auth);
+          console.log("Firebase Auth signed in anonymously (silently fallback from expired token):", userCredential.user.uid);
+          localStorage.setItem('shikaku_player_uid', userCredential.user.uid);
+          return userCredential.user;
+        } catch (e) {
+          console.error("Anonymous sign in failed:", e);
+        }
+      }
+      return null;
+    }
+
     try {
       const credential = GoogleAuthProvider.credential(googleProfile.idToken);
       const userCredential = await signInWithCredential(auth, credential);
@@ -87,7 +135,24 @@ export async function initializeAuthSession(): Promise<any> {
     } catch (err) {
       console.error("Firebase auth login with Google credential failed, trying anonymous:", err);
       const errMsg = err instanceof Error ? err.message : String(err);
-      window.dispatchEvent(new CustomEvent('shikaku_auth_error', { detail: { error: errMsg } }));
+      
+      const isStaleOrInvalid = errMsg.includes('stale') || 
+                               errMsg.includes('auth/invalid-credential') || 
+                               errMsg.includes('expired') || 
+                               errMsg.includes('auth/argument-error');
+      
+      if (!isStaleOrInvalid) {
+        window.dispatchEvent(new CustomEvent('shikaku_auth_error', { detail: { error: errMsg } }));
+      } else {
+        // Silently clear the invalid token from profile
+        try {
+          const stored = getGoogleProfile();
+          if (stored && stored.idToken === googleProfile.idToken) {
+            delete stored.idToken;
+            localStorage.setItem('shikaku_google_user', JSON.stringify(stored));
+          }
+        } catch (e) {}
+      }
       
       const localLvl = Number(localStorage.getItem('shikaku_campaign_level') || '1');
       if (localLvl > 1) {
@@ -374,28 +439,11 @@ export async function getDailyLeaderboard(date: string, difficulty: Difficulty):
     }
   } catch (err) {
     console.warn("Failed to fetch official leaderboard from Firestore, falling back to local backend:", err);
-    const errMsg = err instanceof Error ? err.message : String(err);
-    if (errMsg.toLowerCase().includes('permission') || errMsg.toLowerCase().includes('insufficient')) {
-      try {
-        handleFirestoreError(err, OperationType.LIST, 'daily_leaderboard');
-      } catch (detailedErr) {
-        console.error("Structured Firestore error details:", detailedErr);
-      }
-    }
   }
 
-  try {
-    const res = await fetch(`/api/leaderboard?date=${encodeURIComponent(date)}&difficulty=${encodeURIComponent(difficulty)}`);
-    if (!res.ok) {
-      throw new Error(`Server returned status: ${res.status}`);
-    }
-    return await res.json();
-  } catch (err) {
-    console.error("Failed to fetch official daily leaderboard from backend, using simulated fallback:", err);
-    // Fallback gracefully so game remains robust
-    const allFiltered = ensureMockDataForLocal(date, difficulty);
-    return allFiltered.sort((a, b) => a.completionTime - b.completionTime).slice(0, 10);
-  }
+  // Fallback gracefully so game remains robust
+  const allFiltered = ensureMockDataForLocal(date, difficulty);
+  return allFiltered.sort((a, b) => a.completionTime - b.completionTime).slice(0, 10);
 }
 
 export async function submitDailyScore(
@@ -465,29 +513,7 @@ export async function submitDailyScore(
       }
     }
   } else {
-    console.log("Not signed in to Firebase Auth. Skipping direct Firestore submission (Global API used instead).");
-  }
-
-  // Submit to actual manual backend database globally!
-  try {
-    const res = await fetch("/api/leaderboard", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        date,
-        playerName: cleanPlayerName,
-        completionTime,
-        difficulty,
-        userId
-      })
-    });
-    if (!res.ok) {
-      console.error("Backend manual DB rejected global score submission");
-    }
-  } catch (err) {
-    console.error("Failed to connect to backend manual DB for global score sync:", err);
+    console.log("Not signed in to Firebase Auth. Skipping direct Firestore submission.");
   }
 }
 
@@ -499,6 +525,7 @@ export interface UserProgressData {
   playerId?: string;
   displayName?: string;
   friends?: string[];
+  coins?: number;
 }
 
 // Upload current local progress for backup and syncing
@@ -546,6 +573,9 @@ export async function uploadUserProgress(
   const playerId = cleanIdSeed.replace(/[^a-zA-Z0-9]/g, '').substring(0, 6).toUpperCase() + '_' + activeUserId.substring(0, 4).toUpperCase();
 
   // Upload to Firestore only if Firebase user is authenticated
+  const coinsStr = localStorage.getItem('shikaku_coins') || '100';
+  const coinsNum = parseInt(coinsStr, 10) || 100;
+
   if (auth.currentUser) {
     try {
       const userDocRef = doc(db, 'users', activeUserId);
@@ -556,6 +586,7 @@ export async function uploadUserProgress(
         dailyChallengesCompleted: completedDaily,
         displayName: resolvedName,
         playerId: playerId,
+        coins: coinsNum,
         updatedAt: new Date().toISOString()
       };
       await setDoc(userDocRef, docData);
@@ -573,29 +604,6 @@ export async function uploadUserProgress(
     }
   } else {
     console.log("Not signed in to Firebase Auth. Skipping direct Firestore user progress backup.");
-  }
-
-  try {
-    const payload: any = {
-      userId: activeUserId,
-      campaignLevel,
-      stats,
-      dailyChallengesCompleted: completedDaily,
-      displayName: resolvedName
-    };
-
-    const res = await fetch("/api/user/progress", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) {
-      console.error("Failed to update user progress on server map");
-    }
-  } catch (err) {
-    console.error("Network error updating user progress:", err);
   }
 }
 
@@ -618,7 +626,8 @@ export async function fetchUserProgress(userId: string): Promise<UserProgressDat
           dailyChallengesCompleted: data.dailyChallengesCompleted || [],
           playerId: data.playerId || activeUserId.substring(0, 6).toUpperCase(),
           displayName: data.displayName || 'Unknown Player',
-          friends: data.friends || []
+          friends: data.friends || [],
+          coins: data.coins !== undefined ? data.coins : 100
         };
       }
     } catch (err) {
@@ -633,27 +642,24 @@ export async function fetchUserProgress(userId: string): Promise<UserProgressDat
       }
     }
   } else {
-    console.log("Not signed in to Firebase Auth. Skipping direct Firestore fetch for user progress (falling back to server API/local).");
+    console.log("Not signed in to Firebase Auth. Skipping direct Firestore fetch for user progress.");
   }
-
-  try {
-    const res = await fetch(`/api/user/progress?userId=${encodeURIComponent(activeUserId)}`);
-    if (!res.ok) {
-      throw new Error(`Server status ${res.status}`);
-    }
-    return await res.json();
-  } catch (err) {
-    console.error("Failed to fetch synced user progress from server API:", err);
-    return null;
-  }
+  return null;
 }
 
 // Search for a player by PlayerID
 export async function fetchPlayerProfile(playerId: string): Promise<any | null> {
   try {
-    const res = await fetch(`/api/players/${encodeURIComponent(playerId)}`);
-    if (!res.ok) return null;
-    return await res.json();
+    const q = query(
+      collection(db, 'users'),
+      where('playerId', '==', playerId),
+      limit(1)
+    );
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+      return querySnapshot.docs[0].data();
+    }
+    return null;
   } catch (err) {
     console.error("Failed to fetch player profile", err);
     return null;
@@ -663,15 +669,21 @@ export async function fetchPlayerProfile(playerId: string): Promise<any | null> 
 // Add a friend
 export async function addFriend(userId: string, friendPlayerId: string): Promise<string[] | null> {
   const activeUserId = getAuthUserId();
+  if (!activeUserId || !auth.currentUser) return null;
+  
   try {
-    const res = await fetch(`/api/user/friends`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: activeUserId, friendPlayerId })
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.friends;
+    const userDocRef = doc(db, 'users', activeUserId);
+    const docSnap = await getDoc(userDocRef);
+    if (!docSnap.exists()) return null;
+    
+    const data = docSnap.data();
+    const friends: string[] = data.friends || [];
+    
+    if (!friends.includes(friendPlayerId)) {
+      friends.push(friendPlayerId);
+      await setDoc(userDocRef, { friends }, { merge: true });
+    }
+    return friends;
   } catch (err) {
     console.error("Failed to add friend", err);
     return null;
@@ -681,12 +693,42 @@ export async function addFriend(userId: string, friendPlayerId: string): Promise
 // Fetch friends details
 export async function fetchFriendsList(userId: string): Promise<any[]> {
   const activeUserId = getAuthUserId();
+  if (!activeUserId) return [];
+
+  // Get current user's friends list
+  let friendIds: string[] = [];
   try {
-    const res = await fetch(`/api/user/friends?userId=${encodeURIComponent(activeUserId)}`);
-    if (!res.ok) return [];
-    return await res.json();
+    const docRef = doc(db, 'users', activeUserId);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      friendIds = docSnap.data().friends || [];
+    }
   } catch (err) {
-    console.error("Failed to fetch friends", err);
+    console.error("Failed to fetch friends list", err);
     return [];
   }
+
+  if (friendIds.length === 0) return [];
+  
+  const friendsData: any[] = [];
+  // For each friend, fetch their publicly accessible profile fields via query by playerId
+  // Firestore allows up to 30 items in `in` clauses if we used it, but doing multiple limit(1) queries is fine for small lists
+  try {
+    for (const pid of friendIds) {
+      const q = query(collection(db, 'users'), where('playerId', '==', pid), limit(1));
+      const qSnap = await getDocs(q);
+      if (!qSnap.empty) {
+        const friendDoc = qSnap.docs[0].data();
+        friendsData.push({
+          playerId: friendDoc.playerId,
+          displayName: friendDoc.displayName,
+          campaignLevel: friendDoc.campaignLevel,
+          stats: friendDoc.stats
+        });
+      }
+    }
+  } catch (e) {
+    console.error("Failed to fetch friends details", e);
+  }
+  return friendsData;
 }

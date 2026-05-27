@@ -155,6 +155,31 @@ export default function ShikakuGrid({
       return;
     }
 
+    // Direct single tap select for 1x1 box
+    if (cell.number === 1) {
+      const newId = `rect_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      const completedRect: BoardRectangle = {
+        id: newId,
+        startX: cell.x,
+        startY: cell.y,
+        endX: cell.x,
+        endY: cell.y,
+        width: 1,
+        height: 1,
+        area: 1,
+        clueX: cell.x,
+        clueY: cell.y,
+        clueValue: 1,
+        isValid: true,
+        containsMultipleClues: false,
+        hasWrongArea: false,
+      };
+      onAddRectangle(completedRect);
+      sfx.playLockClick(isMuted);
+      triggerHaptic(15, isMuted);
+      return;
+    }
+
     setIsDragging(true);
     setDragOrigin({ x: cell.x, y: cell.y });
     setDragCurrent({ x: cell.x, y: cell.y });
@@ -197,6 +222,31 @@ export default function ShikakuGrid({
     if (rectClicked) {
       onRemoveRectangle(rectClicked.id);
       sfx.playDragTick(isMuted);
+      triggerHaptic(15, isMuted);
+      return;
+    }
+
+    // Direct single tap select for 1x1 box
+    if (cell.number === 1) {
+      const newId = `rect_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      const completedRect: BoardRectangle = {
+        id: newId,
+        startX: cell.x,
+        startY: cell.y,
+        endX: cell.x,
+        endY: cell.y,
+        width: 1,
+        height: 1,
+        area: 1,
+        clueX: cell.x,
+        clueY: cell.y,
+        clueValue: 1,
+        isValid: true,
+        containsMultipleClues: false,
+        hasWrongArea: false,
+      };
+      onAddRectangle(completedRect);
+      sfx.playLockClick(isMuted);
       triggerHaptic(15, isMuted);
       return;
     }

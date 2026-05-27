@@ -1,0 +1,18 @@
+# Netlify configuration for modern fullstack Deployments
+
+[build]
+  # Specify the output build directory of Vite
+  publish = "dist"
+  command = "npm run build"
+
+[[redirects]]
+  # Redirect any backend API calls to Vercel/Netlify backend functions
+  from = "/api/*"
+  to = "/.netlify/functions/index/:splat"
+  status = 200
+
+[[redirects]]
+  # Redirect all other page paths to index.html for React SPA Client routing
+  from = "/*"
+  to = "/index.html"
+  status = 200
