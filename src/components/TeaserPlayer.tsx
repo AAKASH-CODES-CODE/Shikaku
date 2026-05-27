@@ -161,32 +161,32 @@ export default function TeaserPlayer({ onClose, onPlayGame, reducedMotion = fals
           { startX: 0, startY: 0, endX: 1, endY: 1, clue: 4, isValid: true },
           { startX: 2, startY: 0, endX: 4, endY: 0, clue: 3, isValid: true }
         ]);
-        // Simulate drawing a wrong box (3x2 over a "5" clue - size 6 is wrong)
+        // Simulate drawing a wrong box (3x1 over a "2" clue - size 3 is wrong)
         setTimeout(() => {
           setSimulatedRects((prev) => [
             ...prev,
-            { startX: 0, startY: 2, endX: 2, endY: 3, clue: 5, isValid: false, isWrong: true, label: "Wrong Area" }
+            { startX: 0, startY: 2, endX: 2, endY: 2, clue: 2, isValid: false, isWrong: true, label: "Wrong Area" }
           ]);
         }, 1100);
-        // Delete incorrect box, substitute for correct box (5x1)
+        // Delete incorrect box, substitute for correct box (2x1)
         setTimeout(() => {
           setSimulatedRects((prev) => prev.filter(r => !r.isWrong));
-        }, 2800);
+        }, 2850);
         setTimeout(() => {
           setSimulatedRects((prev) => [
             ...prev,
-            { startX: 0, startY: 2, endX: 4, endY: 2, clue: 5, isValid: true }
+            { startX: 0, startY: 2, endX: 1, endY: 2, clue: 2, isValid: true }
           ]);
         }, 3400);
         break;
 
-      case 3: // Glowing hints
+      case 3: // Glowing hints for Box C (clue 6 at Row 1, Col 4)
         setSimulatedRects([
           { startX: 0, startY: 0, endX: 1, endY: 1, clue: 4, isValid: true },
           { startX: 2, startY: 0, endX: 4, endY: 0, clue: 3, isValid: true },
-          { startX: 0, startY: 2, endX: 4, endY: 2, clue: 5, isValid: true }
+          { startX: 0, startY: 2, endX: 1, endY: 2, clue: 2, isValid: true }
         ]);
-        // Trigger high impact custom pulsing border hint
+        // Trigger high impact custom pulsing border hint pointing to the space of Box C
         setTimeout(() => {
           setShowHintPulse(true);
         }, 800);
@@ -194,26 +194,26 @@ export default function TeaserPlayer({ onClose, onPlayGame, reducedMotion = fals
 
       case 4: // Campaign showcase
         setShowHintPulse(false);
-        // Fill up multiple correct spaces quickly
+        // Fill up multiple correct spaces quickly, leaving only one final blocker
         setSimulatedRects([
           { startX: 0, startY: 0, endX: 1, endY: 1, clue: 4, isValid: true },
           { startX: 2, startY: 0, endX: 4, endY: 0, clue: 3, isValid: true },
-          { startX: 0, startY: 2, endX: 4, endY: 2, clue: 5, isValid: true },
-          { startX: 0, startY: 3, endX: 3, endY: 3, clue: 4, isValid: true },
-          { startX: 4, startY: 1, endX: 4, endY: 4, clue: 4, isValid: true }
+          { startX: 0, startY: 2, endX: 1, endY: 2, clue: 2, isValid: true },
+          { startX: 2, startY: 1, endX: 4, endY: 2, clue: 6, isValid: true },
+          { startX: 0, startY: 3, endX: 1, endY: 4, clue: 4, isValid: true }
         ]);
         break;
 
       case 5: // Win explosion!
         setShowHintPulse(false);
-        // Place the absolute final block to solve grid
+        // Place the absolute final block (Box E: clue 6) to solve grid perfectly
         setSimulatedRects([
           { startX: 0, startY: 0, endX: 1, endY: 1, clue: 4, isValid: true },
           { startX: 2, startY: 0, endX: 4, endY: 0, clue: 3, isValid: true },
-          { startX: 0, startY: 2, endX: 4, endY: 2, clue: 5, isValid: true },
-          { startX: 0, startY: 3, endX: 3, endY: 3, clue: 4, isValid: true },
-          { startX: 4, startY: 1, endX: 4, endY: 4, clue: 4, isValid: true },
-          { startX: 0, startY: 4, endX: 3, endY: 4, clue: null, isValid: true } // completion box
+          { startX: 0, startY: 2, endX: 1, endY: 2, clue: 2, isValid: true },
+          { startX: 2, startY: 1, endX: 4, endY: 2, clue: 6, isValid: true },
+          { startX: 0, startY: 3, endX: 1, endY: 4, clue: 4, isValid: true },
+          { startX: 2, startY: 3, endX: 4, endY: 4, clue: 6, isValid: true } // completion box
         ]);
         setTimeout(() => {
           setShowWinParticles(true);
@@ -245,7 +245,7 @@ export default function TeaserPlayer({ onClose, onPlayGame, reducedMotion = fals
   // Static 5x5 grid cells array for virtual dashboard demonstration
   const virtualCells = [];
   const cellClues: { [key: string]: number } = {
-    "0,0": 4, "0,2": 3, "2,0": 5, "3,0": 4, "1,4": 4
+    "0,0": 4, "0,2": 3, "1,4": 6, "2,0": 2, "3,2": 6, "4,0": 4
   };
   for (let r = 0; r < 5; r++) {
     for (let c = 0; c < 5; c++) {
@@ -287,62 +287,70 @@ export default function TeaserPlayer({ onClose, onPlayGame, reducedMotion = fals
       <main className="flex-1 flex flex-col items-center justify-center p-4">
         <div className="w-full max-w-4xl flex flex-col items-center justify-center gap-8 relative">
           
-          {/* Cinematic Viewport 16:9 */}
-          <div className="w-full aspect-video rounded-2xl overflow-hidden border border-neutral-800 bg-neutral-950/90 shadow-[0_24px_60px_rgba(0,0,0,0.8)] flex flex-col relative">
+          {/* Cinematic Viewport 9:16 (Portrait for Instagram/TikTok status stories) */}
+          <div className="relative aspect-[9/16] w-full max-w-[340px] sm:max-w-[360px] rounded-[48px] overflow-hidden border-[12px] border-neutral-900 bg-neutral-950 shadow-[0_24px_80px_rgba(0,0,0,0.95)] flex flex-col ring-1 ring-neutral-800">
             
-            {/* Cinematic top letterbox bar */}
-            <div className="absolute top-0 inset-x-0 h-[8%] bg-black/90 pointer-events-none z-40 border-b border-neutral-900" />
+            {/* Simulated Smartphone Dynamic Notch / Island */}
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 h-5 w-24 bg-neutral-900 rounded-full z-50 flex items-center justify-center pointer-events-none">
+              <div className="w-2 h-2 rounded-full bg-neutral-950 ml-auto mr-3 border border-neutral-800" />
+            </div>
+
+            {/* Space buffer for Smartphone Island */}
+            <div className="h-10 shrink-0 pointer-events-none" />
             
             {/* Scene Content Frame */}
-            <div className="flex-1 flex flex-col items-center justify-center p-8 relative">
+            <div className="flex-1 flex flex-col items-center justify-between p-6 pb-8 relative">
               <AnimatePresence mode="wait">
                 <motion.div
                   key={currentScene}
-                  initial={{ opacity: 0, y: 10 }}
+                  initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
+                  exit={{ opacity: 0, y: -12 }}
                   transition={{ duration: 0.55, ease: "easeOut" }}
                   className="w-full h-full flex flex-col justify-between items-center relative z-20"
                 >
                   {/* Top Quote of the current Scene */}
-                  <div className="text-center space-y-2 max-w-xl">
+                  <div className="text-center space-y-2.5 px-3 w-full">
                     <motion.h2 
                       id="scene-narrative-title"
-                      className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white font-sans"
+                      className="text-xl sm:text-2xl font-black tracking-tight text-white font-sans leading-tight pt-1"
                     >
                       {scenes[currentScene].narrative}
                     </motion.h2>
-                    <p className="text-xs sm:text-sm text-neutral-400 font-medium">
+                    <p className="text-[11px] text-neutral-400 font-semibold leading-relaxed">
                       {scenes[currentScene].subtext}
                     </p>
                   </div>
 
                   {/* Interactive Virtual Board / Feature Demonstrator */}
-                  <div className="flex-1 w-full max-h-[300px] flex items-center justify-center relative my-4">
+                  <div className="flex-1 w-full flex items-center justify-center relative my-3">
                     
                     {/* Scene 0: Epic Title Intro */}
                     {currentScene === 0 && (
-                      <div className="flex flex-col items-center justify-center space-y-4">
+                      <div className="flex flex-col items-center justify-center space-y-3 text-center">
                         <motion.h1 
                           initial={{ scale: 0.85, filter: "blur(10px)" }}
                           animate={{ scale: 1, filter: "blur(0px)" }}
                           transition={{ duration: 1.5, ease: "easeOut" }}
-                          className="text-5xl sm:text-7xl font-extrabold tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-white via-neutral-200 to-neutral-500 font-sans"
+                          className="text-4xl font-extrabold tracking-[0.22em] text-transparent bg-clip-text bg-gradient-to-br from-white via-neutral-200 to-neutral-500 font-sans"
                         >
                           SHIKAKU
                         </motion.h1>
+                        <p className="text-[9px] font-mono tracking-[0.3em] text-blue-500 uppercase font-black">
+                          LOGIC REVOLUTION
+                        </p>
                         <motion.div
                           initial={{ opacity: 0 }}
                           animate={{ opacity: [0, 1, 0.5, 1] }}
                           transition={{ delay: 1, duration: 1.5 }}
-                          className="h-[1px] w-36 bg-gradient-to-r from-transparent via-blue-500 to-transparent"
+                          className="h-[1px] w-20 bg-gradient-to-r from-transparent via-blue-500 to-transparent"
                         />
                       </div>
                     )}
 
                     {/* Scene 1, 2, 3, 5: Simulated Board */}
                     {(currentScene === 1 || currentScene === 2 || currentScene === 3 || currentScene === 5) && (
-                      <div className="relative p-2.5 bg-neutral-900/60 rounded-xl border border-neutral-800 w-[210px] h-[210px] sm:w-[240px] sm:h-[240px] shadow-sm select-none">
+                      <div className="relative p-2 bg-neutral-900/60 rounded-xl border border-neutral-800 w-[190px] h-[190px] shadow-sm select-none">
                         
                         {/* 5x5 Grid background lines */}
                         <div className="w-full h-full grid grid-cols-5 grid-rows-5 gap-[1px] bg-neutral-800 rounded-sm overflow-hidden relative">
@@ -352,7 +360,7 @@ export default function TeaserPlayer({ onClose, onPlayGame, reducedMotion = fals
                               className="bg-neutral-950/90 flex items-center justify-center relative"
                             >
                               {cell.clue && (
-                                <span className="text-sm sm:text-base font-extrabold text-white/90 font-sans">
+                                <span className="text-sm font-extrabold text-white/90 font-sans">
                                   {cell.clue}
                                 </span>
                               )}
@@ -377,7 +385,7 @@ export default function TeaserPlayer({ onClose, onPlayGame, reducedMotion = fals
                                 style={{ gridColumn, gridRow }}
                               >
                                 {rect.label && (
-                                  <span className="text-[8px] font-mono uppercase bg-red-600 text-white px-1 py-0.2 rounded font-extrabold">
+                                  <span className="text-[7px] font-mono uppercase bg-red-600 text-white px-1 py-0.2 rounded font-extrabold">
                                     {rect.label}
                                   </span>
                                 )}
@@ -397,8 +405,8 @@ export default function TeaserPlayer({ onClose, onPlayGame, reducedMotion = fals
                               transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
                               className="absolute inset-[1px] rounded-lg border-solid z-30 pointer-events-none bg-amber-500/10"
                               style={{
-                                gridColumn: "3 / 6", // 3-cell wide space at top
-                                gridRow: "1 / 2"
+                                gridColumn: "3 / 6", // Spans Col 2 to Col 4 (grid lines 3 to 6)
+                                gridRow: "2 / 4"    // Spans Row 1 to Row 2 (grid lines 2 to 4)
                               }}
                             />
                           )}
@@ -413,33 +421,33 @@ export default function TeaserPlayer({ onClose, onPlayGame, reducedMotion = fals
                               transition={{ duration: 1.4 }}
                               className="w-full h-full flex items-center justify-center"
                             >
-                              <div className="text-3xl">✨ SOLVED! ✨</div>
+                              <div className="text-xl font-bold text-white bg-black/40 px-3 py-1.5 rounded-full backdrop-blur-sm shadow-xl">✨ SOLVED! ✨</div>
                             </motion.div>
                           </div>
                         )}
                       </div>
                     )}
 
-                    {/* Scene 4: Level slide reels */}
+                    {/* Scene 4: Level slide reels, stacked vertically for narrow layout */}
                     {currentScene === 4 && (
-                      <div className="flex flex-col sm:flex-row gap-4 items-center justify-center w-full max-w-lg px-6">
+                      <div className="flex flex-col gap-2.5 w-full px-2">
                         {[
-                          { title: "Campaign", text: "80 levels of progressive scale", badge: "Campaign Mode", color: "from-[#007AFF]/20 to-[#007AFF]/5", border: "border-blue-500/30" },
-                          { title: "Grid Arena", text: "Expert 15x15 logic grids", badge: "Multiplayer Ready", color: "from-emerald-500/20 to-emerald-500/5", border: "border-emerald-500/30" },
-                          { title: "Daily", text: "Fresh new puzzle boards daily", badge: "Leaderboards", color: "from-amber-500/20 to-amber-500/5", border: "border-amber-500/30" },
+                          { title: "Campaign", text: "80 levels of progressive scale", badge: "Campaign Mode", color: "from-[#007AFF]/25 to-[#007AFF]/5", border: "border-blue-500/30" },
+                          { title: "Grid Arena", text: "Expert 15x15 logic grids", badge: "Arena Fight", color: "from-emerald-500/25 to-emerald-500/5", border: "border-emerald-500/30" },
+                          { title: "Daily", text: "Fresh new boards daily", badge: "Competitions", color: "from-amber-500/25 to-amber-500/5", border: "border-amber-500/30" },
                         ].map((card, index) => (
                           <motion.div
                             key={index}
-                            initial={{ opacity: 0, y: 30 }}
+                            initial={{ opacity: 0, y: 15 }}
                             animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: index * 0.18, type: "spring", stiffness: 100 }}
-                            className={`flex-1 p-4 rounded-xl border ${card.border} bg-gradient-to-b ${card.color} text-center space-y-2`}
+                            transition={{ delay: index * 0.12, type: "spring", stiffness: 100 }}
+                            className={`p-3 rounded-2xl border ${card.border} bg-gradient-to-b ${card.color} text-center space-y-1`}
                           >
-                            <span className="text-[8px] font-mono tracking-widest font-bold text-white bg-white/10 px-1.5 py-0.5 rounded-full uppercase">
+                            <span className="text-[7px] font-mono tracking-wider font-extrabold text-white bg-white/10 px-1.5 py-0.5 rounded-full uppercase">
                               {card.badge}
                             </span>
-                            <h4 className="text-sm font-extrabold text-white">{card.title}</h4>
-                            <p className="text-[10px] text-neutral-400 font-medium">{card.text}</p>
+                            <h4 className="text-xs font-black text-white">{card.title}</h4>
+                            <p className="text-[9px] text-neutral-400 font-medium">{card.text}</p>
                           </motion.div>
                         ))}
                       </div>
@@ -451,35 +459,35 @@ export default function TeaserPlayer({ onClose, onPlayGame, reducedMotion = fals
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ duration: 0.8 }}
-                        className="p-6 rounded-2xl border border-neutral-800 bg-neutral-900/40 backdrop-blur-md max-w-sm text-center space-y-4"
+                        className="p-5 rounded-2xl border border-neutral-800/80 bg-neutral-900/40 backdrop-blur-md w-full max-w-[260px] text-center space-y-4 shadow-xl"
                       >
                         <div className="flex justify-center">
-                          <div className="p-3 rounded-full bg-blue-500/10 text-blue-400">
-                            <Sparkles className="w-8 h-8 animate-pulse" />
+                          <div className="p-2.5 rounded-full bg-blue-500/10 text-blue-400">
+                            <Sparkles className="w-6 h-6 animate-pulse" />
                           </div>
                         </div>
                         <div className="space-y-1">
-                          <h4 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-[#007AFF] to-[#34C759] uppercase tracking-wider">
+                          <h4 className="text-md font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-[#007AFF] to-[#34C759] uppercase tracking-wider">
                             SHIKAKU PUZZLE
                           </h4>
-                          <p className="text-xs text-neutral-400">
+                          <p className="text-[10px] text-neutral-400 leading-normal font-medium">
                             Minimalist design. High fidelity logic. 100% cloud connected.
                           </p>
                         </div>
-                        <div className="flex gap-2.5 justify-center">
-                          <button
-                            onClick={handleRestart}
-                            className="px-4 py-2 border border-neutral-700 hover:border-white text-white rounded-xl text-xs font-semibold cursor-pointer transition-all active:scale-95 flex items-center gap-1.5"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            <span>Replay Teaser</span>
-                          </button>
+                        <div className="flex flex-col gap-2 justify-center">
                           <button
                             onClick={onPlayGame}
-                            className="px-5 py-2.5 bg-[#007AFF] hover:bg-blue-600 text-white rounded-xl text-xs font-bold cursor-pointer transition-all active:scale-95 shadow-md shadow-blue-500/20 flex items-center gap-1.5"
+                            className="w-full px-4 py-2 bg-[#007AFF] hover:bg-blue-600 text-white rounded-xl text-xs font-bold cursor-pointer transition-all active:scale-95 shadow-md shadow-blue-500/20 flex items-center justify-center gap-1.5"
                           >
-                            <span>Enter Game</span>
+                            <span>Play Game Now</span>
                             <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={handleRestart}
+                            className="w-full px-4 py-2 border border-neutral-800 hover:border-neutral-600 text-neutral-300 rounded-xl text-[10px] font-semibold cursor-pointer transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Replay Teaser</span>
                           </button>
                         </div>
                       </motion.div>
