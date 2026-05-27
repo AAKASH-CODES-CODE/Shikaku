@@ -18,6 +18,7 @@ interface ShikakuGridProps {
   isWinningCascade: boolean;
   cascadeIndex: number;
   reducedMotion?: boolean;
+  highlightArea?: { startX: number; startY: number; endX: number; endY: number } | null;
 }
 
 export default function ShikakuGrid({
@@ -35,6 +36,7 @@ export default function ShikakuGrid({
   isWinningCascade,
   cascadeIndex,
   reducedMotion = false,
+  highlightArea = null,
 }: ShikakuGridProps) {
   // Drag states
   const [isDragging, setIsDragging] = useState(false);
@@ -427,6 +429,15 @@ export default function ShikakuGrid({
 
               const hasBg = !isInsideLockedRect && !isInsideDragRect;
 
+              // Check if cell is dimmed or highlighted in tutorial mode
+              const isDimmed = highlightArea && (
+                cell.x < highlightArea.startX ||
+                cell.x > highlightArea.endX ||
+                cell.y < highlightArea.startY ||
+                cell.y > highlightArea.endY
+              );
+              const isHighlighted = highlightArea && !isDimmed;
+
               // Calculate distance from center to configure stagger delay
               const centerX = (width - 1) / 2;
               const centerY = (height - 1) / 2;
@@ -434,13 +445,26 @@ export default function ShikakuGrid({
               const dy = cell.y - centerY;
               const distance = Math.sqrt(dx * dx + dy * dy);
 
+              // Dynamic styles based on spotlight highlight states
+              let cellClass = `w-full h-full flex items-center justify-center relative select-none rounded-[10%] duration-300 transition-all `;
+              if (isDimmed) {
+                cellClass += `bg-blue-950/45 dark:bg-blue-950/60 border border-blue-900/30 opacity-20 pointer-events-none scale-95 blur-[0.3px] z-20 `;
+              } else if (isHighlighted) {
+                cellClass += `ring-4 ring-amber-400 dark:ring-amber-500 animate-[pulse_2.2s_infinite] shadow-[0_0_20px_rgba(245,158,11,0.6)] cursor-crosshair text-base z-50 ${hasBg ? 'bg-amber-500/[0.04] dark:bg-amber-500/[0.02]' : 'bg-transparent'} `;
+              } else {
+                cellClass += `cursor-crosshair text-base z-40 ${hasBg ? 'bg-white dark:bg-[#2A2B30]' : 'bg-transparent'} `;
+              }
+
               return (
                 <motion.div
                   key={`cell-${cell.x}-${cell.y}-${levelKey}`}
                   data-cell="true"
                   data-x={cell.x}
                   data-y={cell.y}
-                  onMouseDown={(e) => handleMouseDown(e, cell)}
+                  onMouseDown={(e) => {
+                    if (isDimmed) return;
+                    handleMouseDown(e, cell);
+                  }}
                   aria-label={
                     cell.number !== null
                       ? `Cell at column ${cell.x + 1}, row ${cell.y + 1}. Clue value ${cell.number}`
@@ -456,7 +480,7 @@ export default function ShikakuGrid({
                     damping: 18,
                     delay: distance * 0.05,
                   }}
-                  className={`w-full h-full flex items-center justify-center relative cursor-crosshair text-base select-none rounded-[10%] ${hasBg ? 'bg-white dark:bg-[#2A2B30]' : 'bg-transparent'} z-40`}
+                  className={cellClass}
                   style={{
                     gridColumn: cell.x + 1,
                     gridRow: cell.y + 1,
@@ -467,13 +491,17 @@ export default function ShikakuGrid({
                       id={`clue-node-${cell.x}-${cell.y}`}
                       animate={matchingRect && !reducedMotion ? { scale: [1, 1.25, 1.0], fontWeight: 700 } : matchingRect ? { fontWeight: 700 } : {}}
                       transition={{ duration: 0.25 }}
-                      className={`text-[1.35rem] leading-none ${
-                        matchingRect
+                      className={`text-[1.35rem] leading-none cursor-inherit relative z-40 transition-all duration-200 block drop-shadow-sm ${
+                        isDimmed
+                          ? 'opacity-20 text-blue-900/40 dark:text-blue-900/30'
+                          : isHighlighted
+                          ? 'text-amber-600 dark:text-amber-400 font-extrabold scale-110 drop-shadow-[0_0_8px_rgba(245,158,11,0.45)]'
+                          : matchingRect
                           ? 'text-neutral-500 dark:text-neutral-400 font-bold'
                           : isDarkMode
                           ? 'text-white font-extrabold'
                           : 'text-neutral-950 font-extrabold'
-                      } cursor-inherit relative z-40 transition-all duration-200 block drop-shadow-sm`}
+                      }`}
                     >
                       {cell.number}
                     </motion.span>
@@ -482,10 +510,17 @@ export default function ShikakuGrid({
               );
             })}
             
-            {/* Render Active Locked Rectangles */}
+             {/* Render Active Locked Rectangles */}
             {boardRectangles.map((rect, idx) => {
               const isCascaded = isWinningCascade && idx <= cascadeIndex;
               
+              const isRectDimmed = highlightArea && (
+                rect.startX < highlightArea.startX ||
+                rect.endX > highlightArea.endX ||
+                rect.startY < highlightArea.startY ||
+                rect.endY > highlightArea.endY
+              );
+
               const fillColor = rect.isValid
                 ? isCascaded
                   ? 'bg-emerald-500/40'
@@ -511,16 +546,16 @@ export default function ShikakuGrid({
                   key={rect.id}
                   id={`rect-overlay-${rect.id}`}
                   initial={{ opacity: 0, scale: 0.98 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.15, ease: 'easeOut' }}
-                  className={`rounded-[10%] border-2 transition-colors duration-250 ${fillColor} ${borderColor} z-30 flex items-center justify-center pointer-events-none`}
+                  animate={{ opacity: isRectDimmed ? 0.15 : 1, scale: isRectDimmed ? 0.96 : 1 }}
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
+                  className={`rounded-[10%] border-2 transition-all duration-250 ${fillColor} ${borderColor} ${isRectDimmed ? 'opacity-15 blur-[0.5px] pointer-events-none' : 'z-30'} flex items-center justify-center pointer-events-none`}
                   style={{
                     gridColumn: `${rect.startX + 1} / ${rect.endX + 2}`,
                     gridRow: `${rect.startY + 1} / ${rect.endY + 2}`,
                   }}
                 >
                   {/* Visual clue validation dot indicator */}
-                  {!rect.isValid && (
+                  {!rect.isValid && !isRectDimmed && (
                     <div className="absolute right-1.5 top-1.5 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                   )}
                 </motion.div>
@@ -557,11 +592,16 @@ export default function ShikakuGrid({
           <AnimatePresence>
             {hintFlashRect && (
               <motion.div
-                initial={{ opacity: 0, scale: 1.05 }}
-                animate={{ opacity: [1, 0, 1, 0, 1], scale: [1, 1.02, 1, 1.02, 1] }}
+                initial={{ opacity: 0, borderWidth: "3px", scale: 1 }}
+                animate={{ 
+                  opacity: 1, 
+                  borderWidth: ["3px", "8px", "3px", "8px", "3px"],
+                  scale: [1, 1.015, 1, 1.015, 1],
+                  borderColor: ["#f59e0b", "#d97706", "#f59e0b", "#d97706", "#f59e0b"]
+                }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 1.5, ease: 'easeInOut' }}
-                className="pointer-events-none border-dashed border-4 border-amber-500 bg-amber-500/10 rounded-[10%] z-50"
+                className="pointer-events-none border-solid border-amber-500 bg-amber-500/15 rounded-[10%] z-50"
                 style={{
                   gridColumn: `${hintFlashRect.startX + 1} / ${hintFlashRect.endX + 2}`,
                   gridRow: `${hintFlashRect.startY + 1} / ${hintFlashRect.endY + 2}`,

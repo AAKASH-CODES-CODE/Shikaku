@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Award, Zap, Timer, Check, Play, Calendar, Trophy, ChevronRight, TrendingUp, BarChart2, Power } from 'lucide-react';
+import { Award, Zap, Timer, Check, Play, Calendar, Trophy, ChevronRight, TrendingUp, BarChart2, Power, Video } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Difficulty } from '../types';
 import {
@@ -35,6 +35,7 @@ interface MenuProps {
   onStartCampaignLevel: (levelNum: number) => void;
   onExitGame?: () => void;
   hasCompletedTutorial?: boolean;
+  onPlayTeaser: () => void;
 }
 
 export default function Menu({
@@ -51,8 +52,11 @@ export default function Menu({
   onStartCampaignLevel,
   onExitGame,
   hasCompletedTutorial = false,
+  onPlayTeaser,
 }: MenuProps) {
   const [activeFilter, setActiveFilter] = useState<'all' | 'easy' | 'medium' | 'hard'>('all');
+
+  const isLocked = campaignLevel === 1 && !hasCompletedTutorial;
 
   const historyList = stats.history || [];
   
@@ -171,6 +175,56 @@ export default function Menu({
     },
   };
 
+  const tutorialCard = (
+    <div
+      id="tutorial-banner-card"
+      onClick={onStartTutorial}
+      className={`w-full bento-card p-5 md:p-6 flex flex-col justify-between gap-5 cursor-pointer transition-all duration-300 hover:scale-[1.01] shadow-sm text-left ${
+        !hasCompletedTutorial 
+          ? 'border-blue-500/80 bg-blue-500/[0.02] dark:border-blue-500/50 dark:bg-blue-500/[0.01] ring-2 ring-blue-500/30' 
+          : 'hover:border-[#007AFF] hover:bg-[#007AFF]/[0.02] dark:hover:border-[#0A84FF] dark:hover:bg-[#0A84FF]/[0.01]'
+      }`}
+    >
+      {!hasCompletedTutorial && (
+        <div className="absolute top-4 right-4 flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-500/10 dark:text-blue-400 px-2.5 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+          <span>🎯 Required</span>
+        </div>
+      )}
+
+      <div className="flex items-start space-x-4 animate-fade-in">
+        <div className={`p-3 rounded-xl ${!hasCompletedTutorial ? 'bg-blue-200 dark:bg-blue-900/60 text-[#007AFF] dark:text-[#0A84FF]' : 'bg-blue-100 dark:bg-blue-900/40 text-[#007AFF] dark:text-[#0A84FF]'}`}>
+          <Play className="w-6 h-6 fill-current" />
+        </div>
+        <div>
+          <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#007AFF] dark:text-[#0A84FF] bg-[#007AFF]/10 dark:bg-[#0A84FF]/10 px-2 py-0.5 rounded">
+            Tutorial
+          </span>
+          <h3 className="text-lg font-bold text-neutral-900 dark:text-white mt-1.5">
+            Interactive Tutorial Mode
+          </h3>
+          <p className="text-xs text-neutral-500 dark:text-neutral-450 mt-1.5 leading-relaxed">
+            New to Shikaku? Learn the rules step-by-step, draw your first rectangle, and master clearing invalid cells.
+          </p>
+        </div>
+      </div>
+      <div className="flex justify-end pt-2 border-t border-neutral-100 dark:border-neutral-900/40">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onStartTutorial();
+          }}
+          className={`px-5 py-2.5 text-white font-semibold text-xs rounded-xl shadow-sm tracking-tight transition-all active:scale-95 cursor-pointer ${
+            !hasCompletedTutorial 
+              ? 'bg-blue-600 hover:bg-blue-700 dark:bg-[#007AFF] dark:hover:bg-[#0A84FF] animate-bounce' 
+              : 'bg-[#007AFF] hover:bg-[#0A84FF]'
+          }`}
+        >
+          {hasCompletedTutorial ? 'Replay Tutorial' : 'Start Practice'}
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <motion.div
       id="game-menu-view"
@@ -183,18 +237,36 @@ export default function Menu({
       {/* Intro Header Section */}
       <motion.div
         variants={reducedMotion ? {} : itemVariants}
-        className="text-center max-w-xl space-y-2"
+        className="text-center max-w-xl space-y-3 flex flex-col items-center"
       >
-        <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-neutral-900 dark:text-white font-sans">
+        <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-neutral-900 dark:text-white font-sans">
           Shikaku
-        </h2>
-      </motion.div>
+        </h1>
+        <p className="text-xs text-neutral-400 dark:text-neutral-500 font-mono tracking-widest uppercase">
+          Divide into Rectangles
+        </p>
 
-      {/* Campaign Central Terminal */}
+        {/* Cinematic Launch Teaser Trigger Banner */}
+        <motion.button
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
+          onClick={onPlayTeaser}
+          className="mt-1 text-xs font-semibold px-4 py-1.5 bg-neutral-900 dark:bg-neutral-850 text-white rounded-full flex items-center gap-2 border border-neutral-800/80 shadow-sm active:scale-95 transition-all cursor-pointer group hover:border-blue-500 hover:shadow-[0_0_12px_rgba(0,122,255,0.15)]"
+        >
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+          </span>
+          <Video className="w-3.5 h-3.5 text-neutral-400 group-hover:text-blue-400 transition-colors" />
+          <span>Play Cinematic Launch Teaser</span>
+        </motion.button>
+      </motion.div>      {/* Campaign Central Terminal */}
       <motion.div
         id="campaign-mode-box"
         variants={reducedMotion ? {} : itemVariants}
-        className="w-full bg-gradient-to-br from-[#007AFF]/5 to-[#34C759]/[0.02] dark:from-[#0A84FF]/[0.03] dark:to-[#34C759]/[0.01] border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm text-left transition-all hover:shadow-md"
+        className={`w-full bg-gradient-to-br from-[#007AFF]/5 to-[#34C759]/[0.02] dark:from-[#0A84FF]/[0.03] dark:to-[#34C759]/[0.01] border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm text-left transition-all relative ${
+          isLocked ? 'opacity-40 filter grayscale select-none pointer-events-none' : 'hover:shadow-md'
+        }`}
       >
         <div className="space-y-3 max-w-xl font-sans">
           <div className="flex items-center gap-2">
@@ -218,13 +290,22 @@ export default function Menu({
           </p>
         </div>
         <div className="flex flex-col items-center md:items-end gap-2 shrink-0 w-full md:w-auto">
-          <button
-            onClick={() => onStartCampaignLevel(campaignLevel)}
-            className="w-full md:w-auto px-8 py-4 bg-[#007AFF] hover:bg-[#0A84FF] text-white font-bold text-sm rounded-2xl shadow-lg shadow-[#007AFF]/10 tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
-          >
-            <span>Play Level {campaignLevel}</span>
-            <ChevronRight className="w-4 h-4 text-white" />
-          </button>
+          {isLocked ? (
+            <button
+              disabled
+              className="w-full md:w-auto px-6 py-4 bg-neutral-200 dark:bg-neutral-800 text-neutral-450 dark:text-neutral-500 font-bold text-sm rounded-2xl cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <span>🔒 Locked (Complete Tutorial)</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => onStartCampaignLevel(campaignLevel)}
+              className="w-full md:w-auto px-8 py-4 bg-[#007AFF] hover:bg-[#0A84FF] text-white font-bold text-sm rounded-2xl shadow-lg shadow-[#007AFF]/10 tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+            >
+              <span>Play Level {campaignLevel}</span>
+              <ChevronRight className="w-4 h-4 text-white" />
+            </button>
+          )}
           <span className="text-[10px] font-mono text-neutral-450 dark:text-neutral-500">
             Progress autosaves as you complete levels
           </span>
@@ -234,60 +315,21 @@ export default function Menu({
       {/* Side-by-Side Launcher Banners */}
       <motion.div
         variants={reducedMotion ? {} : itemVariants}
-        className={`grid grid-cols-1 ${hasCompletedTutorial ? '' : 'md:grid-cols-2'} gap-6 w-full pt-1`}
+        className={`grid grid-cols-1 ${!hasCompletedTutorial ? 'md:grid-cols-2' : ''} gap-6 w-full pt-1`}
       >
         
         {/* Interactive Tutorial Banner */}
-        {!hasCompletedTutorial && (
-          <div
-            id="tutorial-banner-card"
-            onClick={onStartTutorial}
-            className="w-full bento-card p-5 md:p-6 flex flex-col justify-between gap-5 cursor-pointer hover:border-[#007AFF] hover:bg-[#007AFF]/[0.02] dark:hover:border-[#0A84FF] dark:hover:bg-[#0A84FF]/[0.01] transition-all hover:scale-[1.01] shadow-sm text-left"
-          >
-            <div className="flex items-start space-x-4">
-              <div className="p-3 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-[#007AFF] dark:text-[#0A84FF]">
-                <Play className="w-6 h-6 fill-current" />
-              </div>
-              <div>
-                <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#007AFF] dark:text-[#0A84FF] bg-[#007AFF]/10 dark:bg-[#0A84FF]/10 px-2 py-0.5 rounded">
-                  Tutorial
-                </span>
-                <h3 className="text-lg font-bold text-neutral-900 dark:text-white mt-1.5">
-                  Interactive Tutorial Mode
-                </h3>
-                <p className="text-xs text-neutral-500 dark:text-neutral-450 mt-1.5 leading-relaxed">
-                  New to Shikaku? Learn the rules step-by-step, draw your first rectangle, and master clearing invalid cells.
-                </p>
-              </div>
-            </div>
-            <div className="flex justify-end pt-2 border-t border-neutral-100 dark:border-neutral-900/40">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onStartTutorial();
-                }}
-                className="px-5 py-2.5 bg-[#007AFF] hover:bg-[#0A84FF] text-white font-semibold text-xs rounded-xl shadow-sm tracking-tight transition-all active:scale-95 cursor-pointer"
-              >
-                Start Tutorial
-              </button>
-            </div>
-          </div>
-        )}
+        {!hasCompletedTutorial && tutorialCard}
 
         {/* Daily Challenge Banner */}
         <div
           id="daily-challenge-card"
-          onClick={onStartDailyChallenge}
-          className={`w-full bento-card p-5 md:p-6 flex flex-col justify-between gap-5 cursor-pointer hover:border-amber-500 hover:bg-amber-500/[0.015] transition-all hover:scale-[1.01] shadow-sm text-left relative overflow-hidden ${
+          onClick={isLocked ? undefined : onStartDailyChallenge}
+          className={`w-full bento-card p-5 md:p-6 flex flex-col justify-between gap-5 shadow-sm text-left relative overflow-hidden transition-all duration-300 ${isLocked ? 'opacity-40 filter grayscale pointer-events-none select-none' : 'cursor-pointer hover:border-amber-500 hover:bg-amber-500/[0.015] hover:scale-[1.01]'} ${
             dailyCompleted ? 'border-emerald-500/30 dark:border-emerald-500/10' : ''
           }`}
         >
-          {dailyCompleted && (
-            <div className="absolute top-4 right-4 flex items-center gap-1 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-              <Check className="w-3 h-3" />
-              <span>Completed</span>
-            </div>
-          )}
+
 
           <div className="flex items-start space-x-4">
             <div className={`p-3 rounded-xl ${dailyCompleted ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-500' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-500'}`}>
@@ -311,20 +353,30 @@ export default function Menu({
               id="btn-view-leaderboard"
               onClick={(e) => {
                 e.stopPropagation();
+                if (isLocked) return;
                 onViewLeaderboard();
               }}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg transition-all"
+              disabled={isLocked}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
+                isLocked ? 'text-neutral-400 dark:text-neutral-600 cursor-not-allowed' : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-900'
+              }`}
             >
               <Trophy className="w-4 h-4 text-amber-500" />
               <span>Standings</span>
             </button>
-            <button
-              onClick={onStartDailyChallenge}
-              className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs rounded-xl shadow-sm tracking-tight transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
-            >
-              <span>{dailyCompleted ? 'Replay Board' : 'Play Arena'}</span>
-              <ChevronRight className="w-3.5 h-3.5 text-white" />
-            </button>
+            {isLocked ? (
+              <span className="text-xs font-bold text-neutral-450 dark:text-neutral-500 py-2.5">
+                🔒 Complete Tutorial
+              </span>
+            ) : (
+              <button
+                onClick={onStartDailyChallenge}
+                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs rounded-xl shadow-sm tracking-tight transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+              >
+                <span>{dailyCompleted ? 'Replay Board' : 'Play Arena'}</span>
+                <ChevronRight className="w-3.5 h-3.5 text-white" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -333,7 +385,7 @@ export default function Menu({
       {/* Sandbox Selections Title */}
       <motion.div
         variants={reducedMotion ? {} : itemVariants}
-        className="w-full text-left pt-2 border-t border-neutral-100 dark:border-neutral-900"
+        className={`w-full text-left pt-2 border-t border-neutral-100 dark:border-neutral-900 ${isLocked ? 'opacity-40 select-none' : ''}`}
       >
         <h4 className="text-sm font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 font-mono">
           Sandbox Play (Free Practice)
@@ -364,21 +416,29 @@ export default function Menu({
             <motion.div
               key={card.id}
               id={`difficulty-card-${card.id}`}
-              onClick={() => onStartGame(card.id)}
-              whileHover={reducedMotion ? {} : { scale: 1.02, y: -3 }}
-              whileTap={reducedMotion ? {} : { scale: 0.985 }}
-              className={`p-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex flex-col justify-between space-y-6 transition-all duration-300 cursor-pointer shadow-sm hover:shadow-md ${card.borderColor} ${card.bgHover}`}
+              onClick={isLocked ? undefined : () => onStartGame(card.id)}
+              whileHover={isLocked || reducedMotion ? {} : { scale: 1.02, y: -3 }}
+              whileTap={isLocked || reducedMotion ? {} : { scale: 0.985 }}
+              className={`p-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex flex-col justify-between space-y-6 transition-all duration-300 shadow-sm ${
+                isLocked 
+                  ? 'opacity-40 filter grayscale pointer-events-none select-none' 
+                  : `cursor-pointer hover:shadow-md ${card.borderColor} ${card.bgHover}`
+              }`}
             >
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <span className={`text-xs font-mono font-bold tracking-wider uppercase px-2.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-900 ${card.clueColor}`}>
                     {card.gridSize}
                   </span>
-                  {solvedCount > 0 && (
+                  {solvedCount > 0 ? (
                     <span className="flex items-center text-xs text-emerald-500/90 font-medium">
                       <Check className="w-3.5 h-3.5 mr-0.5" /> Solved
                     </span>
-                  )}
+                  ) : isLocked ? (
+                    <span className="text-[10px] font-bold text-neutral-400 dark:text-neutral-550 flex items-center gap-0.5 uppercase tracking-wide">
+                      🔒 Locked
+                    </span>
+                  ) : null}
                 </div>
                 <h3 className="text-xl font-bold text-neutral-900 dark:text-white">
                   {card.title}
@@ -402,6 +462,16 @@ export default function Menu({
           );
         })}
       </motion.div>
+
+      {/* Tutorial Banner (Only shown below Hard Sandbox if completed) */}
+      {hasCompletedTutorial && (
+        <motion.div
+          variants={reducedMotion ? {} : itemVariants}
+          className="w-full"
+        >
+          {tutorialCard}
+        </motion.div>
+      )}
 
       {/* Stats Counter Shelf */}
       <motion.div 

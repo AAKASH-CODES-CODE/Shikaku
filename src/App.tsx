@@ -9,6 +9,7 @@ import WinModal from './components/WinModal';
 import LeaderboardModal from './components/LeaderboardModal';
 import SettingsModal from './components/SettingsModal';
 import PlayerProfileModal from './components/PlayerProfileModal';
+import TeaserPlayer from './components/TeaserPlayer';
 import { generateLevel } from './utils/shikakuGenerator';
 import { BoardRectangle, Difficulty, LevelData } from './types';
 import { sfx } from './utils/audio';
@@ -72,7 +73,7 @@ const INITIAL_STATS = {
 
 export default function App() {
   // Game state
-  const [gameState, setGameState] = useState<'menu' | 'playing' | 'tutorial'>('menu');
+  const [gameState, setGameState] = useState<'menu' | 'playing' | 'tutorial' | 'teaser'>('menu');
   const [tutorialStep, setTutorialStep] = useState<number>(0);
   const [levelNumber, setLevelNumber] = useState<number>(1);
   const [difficulty, setDifficulty] = useState<Difficulty>('easy');
@@ -131,6 +132,7 @@ export default function App() {
   const [hasCompletedTutorial, setHasCompletedTutorial] = useState<boolean>(() => {
     return localStorage.getItem('shikaku_tutorial_completed') === 'true';
   });
+  const [isTutorialDeferred, setIsTutorialDeferred] = useState<boolean>(false);
 
   // Coin System state hooks
   const [coins, setCoins] = useState<number>(() => {
@@ -212,6 +214,61 @@ export default function App() {
     }
   };
 
+  // Prevent accidental page reloads/closing when in the middle of a puzzle session
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (gameState === 'playing' || gameState === 'tutorial') {
+        const message = 'Are you sure you want to exit? Your active game progress will be lost.';
+        e.preventDefault();
+        e.returnValue = message;
+        return message;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [gameState]);
+
+  // Disable pull-to-refresh and vertical scrolling during active gameplay
+  useEffect(() => {
+    let startY = 0;
+    let startX = 0;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        startY = e.touches[0].clientY;
+        startX = e.touches[0].clientX;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (gameState === 'playing' || gameState === 'tutorial') {
+        if (e.touches.length === 1) {
+          const currentY = e.touches[0].clientY;
+          const currentX = e.touches[0].clientX;
+          const diffY = currentY - startY;
+          const diffX = currentX - startX;
+
+          // Block vertical moves to prevent pull-to-refresh and global scrolling
+          if (Math.abs(diffY) > Math.abs(diffX)) {
+            if (e.cancelable) {
+              e.preventDefault();
+            }
+          }
+        }
+      }
+    };
+
+    document.addEventListener('touchstart', handleTouchStart, { passive: true });
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+
+    return () => {
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchmove', handleTouchMove);
+    };
+  }, [gameState]);
+
   useEffect(() => {
     // 1. Initial Load of Google profile from storage
     const profile = getGoogleProfile();
@@ -264,10 +321,59 @@ export default function App() {
 
             // Keep in sync
             await uploadUserProgress(firebaseUser.uid, targetLvl, targetStats);
+          } else {
+            // New user on server - initialize local storage and state back to clean defaults to prevent user/bleed leakage
+            setCampaignLevel(1);
+            localStorage.setItem('shikaku_campaign_level', '1');
+
+            setStats(INITIAL_STATS);
+            localStorage.setItem('shikaku_stats', JSON.stringify(INITIAL_STATS));
+
+            setCoins(100);
+            localStorage.setItem('shikaku_coins', '100');
+
+            setDailyCompleted(false);
+
+            // Sync daily checks (empty)
+            try {
+              const keysToRemove: string[] = [];
+              for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('shikaku_daily_completed_')) {
+                  keysToRemove.push(key);
+                }
+              }
+              keysToRemove.forEach(k => localStorage.removeItem(k));
+            } catch (e) {}
+
+            await uploadUserProgress(firebaseUser.uid, 1, INITIAL_STATS);
           }
         } catch (err) {
           console.error("Firebase auth state change progress load failed:", err);
         }
+      } else {
+        // Explicitly signed out: reset local state to clean initial values so nothing leaks to local/guest play
+        setCampaignLevel(1);
+        localStorage.setItem('shikaku_campaign_level', '1');
+
+        setStats(INITIAL_STATS);
+        localStorage.setItem('shikaku_stats', JSON.stringify(INITIAL_STATS));
+
+        setCoins(100);
+        localStorage.setItem('shikaku_coins', '100');
+
+        setDailyCompleted(false);
+
+        try {
+          const keysToRemove: string[] = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('shikaku_daily_completed_')) {
+              keysToRemove.push(key);
+            }
+          }
+          keysToRemove.forEach(k => localStorage.removeItem(k));
+        } catch (e) {}
       }
     });
 
@@ -275,16 +381,31 @@ export default function App() {
     const handler = () => {
       const updatedProfile = getGoogleProfile();
       setUserProfile((prevProfile) => {
-        if (prevProfile && !updatedProfile) {
-          // Explicit Google logout: Reset states back to clean level 1/initial stats defaults immediately
+        if (updatedProfile?.userId !== prevProfile?.userId) {
+          // User account changed or logged out - reset states to clean defaults to prevent cross-account leaks
           setCampaignLevel(1);
           setStats(INITIAL_STATS);
           setDailyCompleted(false);
           setCoins(100);
           localStorage.setItem('shikaku_coins', '100');
-        } else if (!prevProfile && updatedProfile) {
-          // Google login
-          syncWithServer(updatedProfile);
+          localStorage.setItem('shikaku_campaign_level', '1');
+          localStorage.setItem('shikaku_stats', JSON.stringify(INITIAL_STATS));
+
+          try {
+            const keysToRemove: string[] = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key && key.startsWith('shikaku_daily_completed_')) {
+                keysToRemove.push(key);
+              }
+            }
+            keysToRemove.forEach(k => localStorage.removeItem(k));
+          } catch (e) {}
+
+          if (updatedProfile) {
+            // Account logged in or switched directly - sync profile progress safely
+            syncWithServer(updatedProfile);
+          }
         }
         return updatedProfile;
       });
@@ -336,6 +457,15 @@ export default function App() {
     }, 12000); // Poll every 12 seconds
     return () => clearInterval(interval);
   }, [userProfile?.userId, campaignLevel, coins, stats]);
+
+  // Auto force tutorial if user is level 1 and has not completed tutorial
+  useEffect(() => {
+    if (campaignLevel === 1 && !hasCompletedTutorial && !isTutorialDeferred && gameState !== 'tutorial') {
+      setGameState('tutorial');
+      setTutorialStep(0);
+      setBoardRectangles([]);
+    }
+  }, [campaignLevel, hasCompletedTutorial, gameState, isTutorialDeferred]);
 
   // Hint & Winning Cascade visual controls
   const [hintFlashRect, setHintFlashRect] = useState<BoardRectangle | null>(null);
@@ -396,17 +526,7 @@ export default function App() {
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const triggerGameSaveToast = () => {
-    if (gameState !== 'playing') return;
-    setShowSavedNotification(false);
-    if (toastTimeoutRef.current) {
-      clearTimeout(toastTimeoutRef.current);
-    }
-    setTimeout(() => {
-      setShowSavedNotification(true);
-      toastTimeoutRef.current = setTimeout(() => {
-        setShowSavedNotification(false);
-      }, 1500); // 1.5s duration is brief and subtle
-    }, 50);
+    // Disabled as per user request to improve gameplay flow
   };
 
   useEffect(() => {
@@ -746,6 +866,8 @@ export default function App() {
         rewarded = 25;
       }
     }
+    // Cap maximum coins rewarded at 50 coins
+    rewarded = Math.min(rewarded, 50);
     setEarnedCoins(rewarded);
     setCoins((prev) => {
       const updated = prev + rewarded;
@@ -916,10 +1038,26 @@ export default function App() {
         // Disallow arbitrary drag to force click remove
         sfx.playErrorThud(isMuted);
       } else if (tutorialStep === 4) {
-        // Free drawing to complete
-        setHistoryStack((prev) => [...prev, boardRectangles]);
-        setRedoStack([]);
-        setBoardRectangles((prev) => [...prev, newRect]);
+        const hasRect2 = boardRectangles.some(r => r.clueX === 3 && r.clueY === 0 && r.isValid);
+        const hasRect3 = boardRectangles.some(r => r.clueX === 2 && r.clueY === 2 && r.isValid);
+
+        let isValidBox = false;
+        if (!hasRect2) {
+          isValidBox = newRect.startX === 2 && newRect.startY === 0 && newRect.endX === 3 && newRect.endY === 1;
+        } else if (!hasRect3) {
+          isValidBox = newRect.startX === 0 && newRect.startY === 2 && newRect.endX === 3 && newRect.endY === 2;
+        } else {
+          isValidBox = newRect.startX === 0 && newRect.startY === 3 && newRect.endX === 3 && newRect.endY === 3;
+        }
+
+        if (isValidBox) {
+          setHistoryStack((prev) => [...prev, boardRectangles]);
+          setRedoStack([]);
+          setBoardRectangles((prev) => [...prev, newRect]);
+          sfx.playLockClick(isMuted);
+        } else {
+          sfx.playErrorThud(isMuted);
+        }
       }
       return;
     }
@@ -1095,6 +1233,42 @@ export default function App() {
       setShowWinModal(false);
     }
   };
+
+  const getTutorialHighlightArea = () => {
+    if (gameState !== 'tutorial') return null;
+    if (tutorialStep === 0) {
+      // Step 0 is welcome text. No cells can be selected.
+      // We return an out-of-grid index so everything is dimmed in blue-dark mask
+      return { startX: -1, startY: -1, endX: -1, endY: -1 };
+    }
+    if (tutorialStep === 1) {
+      // Start 2x2 at (0,0) down to (1,1)
+      return { startX: 0, startY: 0, endX: 1, endY: 1 };
+    }
+    if (tutorialStep === 2) {
+      // Remove wrong area at (2,0). Cell is (2,0) to (3,0).
+      return { startX: 2, startY: 0, endX: 3, endY: 0 };
+    }
+    if (tutorialStep === 3) {
+      // Remove collision multi clue rect at (1,2) to (2,3).
+      return { startX: 1, startY: 2, endX: 2, endY: 3 };
+    }
+    if (tutorialStep === 4) {
+      const hasRect2 = boardRectangles.some(r => r.clueX === 3 && r.clueY === 0 && r.isValid);
+      const hasRect3 = boardRectangles.some(r => r.clueX === 2 && r.clueY === 2 && r.isValid);
+      const hasRect4 = boardRectangles.some(r => r.clueX === 1 && r.clueY === 3 && r.isValid);
+      if (!hasRect2) {
+        return { startX: 2, startY: 0, endX: 3, endY: 1 };
+      } else if (!hasRect3) {
+        return { startX: 0, startY: 2, endX: 3, endY: 2 };
+      } else if (!hasRect4) {
+        return { startX: 0, startY: 3, endX: 3, endY: 3 };
+      }
+    }
+    return null;
+  };
+
+  const highlightArea = getTutorialHighlightArea();
 
   return (
     <>
@@ -1363,9 +1537,14 @@ export default function App() {
               </div>
 
               <div className="flex items-center gap-2 justify-end">
+                {campaignLevel === 1 && !hasCompletedTutorial && (
+                  <span className="px-3.5 py-2.5 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-450 font-extrabold text-[10px] uppercase tracking-wider border border-amber-500/20 shadow-sm flex items-center gap-1.5 select-none md:inline-flex hidden">
+                    ⚠️ Required to Unlock
+                  </span>
+                )}
                 <button
                   onClick={handleBackToMenu}
-                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-350 cursor-pointer"
+                  className="px-4 py-2.5 text-xs font-bold rounded-xl bg-neutral-100 hover:bg-[#FF3B30] hover:text-white dark:bg-neutral-900 dark:hover:bg-red-950/40 dark:hover:text-red-400 text-neutral-700 dark:text-neutral-350 cursor-pointer transition-colors"
                 >
                   Quit Tutorial
                 </button>
@@ -1451,16 +1630,24 @@ export default function App() {
                 )}
                 {tutorialStep === 4 && (
                   <>
-                    <p>Incredible progress! You are now prepared.</p>
-                    <p>The entire grid is now yours. Connect and partition the remaining clues:</p>
-                    <ul className="list-disc pl-4 space-y-1.5 text-neutral-500 dark:text-neutral-450">
-                      <li>Clue "4" at (3,0) (hint: try a vertical 1x4 or horizontal grid rect)</li>
-                      <li>Clue "4" at (2,2)</li>
-                      <li>Clue "4" at (1,3)</li>
-                    </ul>
-                    <p className="font-semibold text-neutral-800 dark:text-neutral-200">
-                      Drag on cells to complete the 4x4 grid placement!
-                    </p>
+                    <p>Incredible progress! You are now prepared to complete the puzzle.</p>
+                    <p>The spotlight is highlighting exactly where to draw next. Let's solve them step-by-step:</p>
+                    {!boardRectangles.some(r => r.clueX === 3 && r.clueY === 0 && r.isValid) ? (
+                      <div className="bg-amber-500/10 dark:bg-amber-500/[0.04] p-3 rounded-xl border border-amber-500/20 space-y-1 animate-fade-in">
+                        <p className="font-bold text-amber-700 dark:text-amber-400">Step A: Top-Right Clue 4</p>
+                        <p>Drag a 2x2 square from cell <strong className="font-bold text-neutral-850 dark:text-white">(2,0) down to (3,1)</strong> to partition the "4" in the top-right corner.</p>
+                      </div>
+                    ) : !boardRectangles.some(r => r.clueX === 2 && r.clueY === 2 && r.isValid) ? (
+                      <div className="bg-amber-500/10 dark:bg-amber-500/[0.04] p-3 rounded-xl border border-amber-500/20 space-y-1 animate-fade-in">
+                        <p className="font-bold text-amber-700 dark:text-amber-400">Step B: Middle-Right Clue 4</p>
+                        <p>Perfect! Now, drag a 4x1 horizontal rectangle along row 3 from <strong className="font-bold text-neutral-850 dark:text-white">(0,2) across to (3,2)</strong> to satisfy the "4" clue at (2,2).</p>
+                      </div>
+                    ) : (
+                      <div className="bg-amber-500/10 dark:bg-amber-500/[0.04] p-3 rounded-xl border border-amber-500/20 space-y-1 animate-fade-in">
+                        <p className="font-bold text-amber-700 dark:text-amber-400">Step C: Bottom Row Clue 4</p>
+                        <p>Stunning! Last step: drag a 4x1 horizontal rectangle along the bottom row from <strong className="font-bold text-neutral-850 dark:text-white">(0,3) across to (3,3)</strong> for the "4" clue at (1,3).</p>
+                      </div>
+                    )}
                   </>
                 )}
                 {tutorialStep === 5 && (
@@ -1528,6 +1715,7 @@ export default function App() {
               isWinningCascade={false}
               cascadeIndex={-1}
               reducedMotion={reducedMotion}
+              highlightArea={highlightArea}
             />
           </div>
 
@@ -1594,6 +1782,20 @@ export default function App() {
             </div>
           </div>
         </div>
+      ) : gameState === 'teaser' ? (
+        <TeaserPlayer
+          onClose={() => {
+            sfx.playLockClick(isMuted);
+            setGameState('menu');
+          }}
+          onPlayGame={() => {
+            sfx.playLockClick(isMuted);
+            setGameState('playing');
+            // Trigger start game
+            handleStartCampaignLevel(campaignLevel);
+          }}
+          reducedMotion={reducedMotion}
+        />
       ) : (
         <>
           {/* Header layout for main menu selection screen */}
@@ -1688,6 +1890,7 @@ export default function App() {
               onStartCampaignLevel={handleStartCampaignLevel}
               onExitGame={() => setShowConfirmModal('exit-app')}
               hasCompletedTutorial={hasCompletedTutorial}
+              onPlayTeaser={() => setGameState('teaser')}
             />
           </main>
 
@@ -1756,26 +1959,7 @@ export default function App() {
         reducedMotion={reducedMotion}
       />
 
-      {/* Subtle Game Saved Toast */}
-      <AnimatePresence>
-        {showSavedNotification && (
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 15, scale: 0.95, transition: { duration: 0.12 } }}
-            className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-3.5 py-2.5 bg-neutral-900/95 dark:bg-neutral-800/95 text-white dark:text-neutral-100 rounded-xl shadow-lg border border-neutral-800 dark:border-neutral-700 font-sans text-xs font-semibold tracking-tight backdrop-blur-sm select-none"
-          >
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <Save className="w-3.5 h-3.5 text-neutral-400" />
-              <span>Game Saved</span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Subtle Game Saved Toast - Removed as requested */}
 
       {/* Insufficient Coins Toast */}
       <AnimatePresence>
@@ -1897,6 +2081,9 @@ export default function App() {
                       window.close();
                     } catch (e) {}
                   } else {
+                    if (mode === 'tutorial-back') {
+                      setIsTutorialDeferred(true);
+                    }
                     setGameState('menu');
                     setHintFlashRect(null);
                     setIsWinningCascade(false);

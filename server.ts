@@ -412,6 +412,8 @@ app.get("/api/user/progress", (req, res) => {
     campaignLevel: userProgress.campaignLevel || 1,
     coins: userProgress.coins !== undefined ? userProgress.coins : 100,
     stats: userProgress.stats || null,
+    currentStreak: userProgress.currentStreak !== undefined ? userProgress.currentStreak : (userProgress.stats?.currentStreak || 0),
+    bestStreak: userProgress.bestStreak !== undefined ? userProgress.bestStreak : (userProgress.stats?.bestStreak || 0),
     dailyChallengesCompleted: userProgress.dailyChallengesCompleted || [],
     playerId: userProgress.playerId || generatePlayerId(String(userId), progressMap),
     displayName: userProgress.displayName || 'Unknown Player',
@@ -432,7 +434,7 @@ function generatePlayerId(userId: string, progressMap: Record<string, any>): str
 
 // API: Sync user progress sync data
 app.post("/api/user/progress", (req, res) => {
-  const { userId, campaignLevel, coins, stats, dailyChallengesCompleted, displayName } = req.body;
+  const { userId, campaignLevel, coins, stats, dailyChallengesCompleted, displayName, currentStreak, bestStreak } = req.body;
   if (!userId) {
     return res.status(400).json({ error: "Missing userId in body" });
   }
@@ -445,6 +447,8 @@ app.post("/api/user/progress", (req, res) => {
     campaignLevel: typeof campaignLevel === "number" ? campaignLevel : existing.campaignLevel || 1,
     coins: typeof coins === "number" ? coins : (existing.coins !== undefined ? existing.coins : 100),
     stats: stats || existing.stats || {},
+    currentStreak: typeof currentStreak === "number" ? currentStreak : (stats?.currentStreak ?? existing.currentStreak ?? 0),
+    bestStreak: typeof bestStreak === "number" ? bestStreak : (stats?.bestStreak ?? existing.bestStreak ?? 0),
     dailyChallengesCompleted: Array.isArray(dailyChallengesCompleted) ? dailyChallengesCompleted : existing.dailyChallengesCompleted || [],
     displayName: displayName || existing.displayName || 'Player',
     playerId: existing.playerId || generatePlayerId(String(userId), progressMap),

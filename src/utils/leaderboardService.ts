@@ -1,6 +1,6 @@
 import { Difficulty } from '../types';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCredential, signInAnonymously, GoogleAuthProvider } from 'firebase/auth';
+import { getAuth, signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, query, collection, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -102,7 +102,7 @@ export async function initializeAuthSession(): Promise<any> {
   const googleProfile = getGoogleProfile();
   if (googleProfile && googleProfile.idToken) {
     if (isTokenExpired(googleProfile.idToken)) {
-      console.log("Cached Google ID token is expired. Falling back to anonymous or clean visitor state silently.");
+      console.log("Cached Google ID token is expired. Keeping visitor state local.");
       // Silently remove token reference to prevent infinite expiry loops, keeping profile name for local displays
       try {
         const stored = getGoogleProfile();
@@ -111,18 +111,6 @@ export async function initializeAuthSession(): Promise<any> {
           localStorage.setItem('shikaku_google_user', JSON.stringify(stored));
         }
       } catch (e) {}
-
-      const localLvl = Number(localStorage.getItem('shikaku_campaign_level') || '1');
-      if (localLvl > 1) {
-        try {
-          const userCredential = await signInAnonymously(auth);
-          console.log("Firebase Auth signed in anonymously (silently fallback from expired token):", userCredential.user.uid);
-          localStorage.setItem('shikaku_player_uid', userCredential.user.uid);
-          return userCredential.user;
-        } catch (e) {
-          console.error("Anonymous sign in failed:", e);
-        }
-      }
       return null;
     }
 
@@ -133,7 +121,7 @@ export async function initializeAuthSession(): Promise<any> {
       localStorage.setItem('shikaku_player_uid', userCredential.user.uid);
       return userCredential.user;
     } catch (err) {
-      console.error("Firebase auth login with Google credential failed, trying anonymous:", err);
+      console.error("Firebase auth login with Google credential failed:", err);
       const errMsg = err instanceof Error ? err.message : String(err);
       
       const isStaleOrInvalid = errMsg.includes('stale') || 
@@ -153,51 +141,6 @@ export async function initializeAuthSession(): Promise<any> {
           }
         } catch (e) {}
       }
-      
-      const localLvl = Number(localStorage.getItem('shikaku_campaign_level') || '1');
-      if (localLvl > 1) {
-        try {
-          const userCredential = await signInAnonymously(auth);
-          console.log("Firebase Auth signed in anonymously (fallback):", userCredential.user.uid);
-          localStorage.setItem('shikaku_player_uid', userCredential.user.uid);
-          return userCredential.user;
-        } catch (e) {
-          console.error("Anonymous sign in failed too:", e);
-          const fallbackErrMsg = e instanceof Error ? e.message : String(e);
-          if (fallbackErrMsg.includes('auth/admin-restricted-operation')) {
-            window.dispatchEvent(new CustomEvent('shikaku_auth_error', {
-              detail: {
-                error: "Anonymous Authentication is currently disabled under your Firebase Console Project (photos-6e67c). Go to Authentication > Sign-In Method, add 'Anonymous' as a provider, and click Enable so guests can play!"
-              }
-            }));
-          }
-        }
-      } else {
-        console.log("No Google session and local campaign level is 1. Deferring anonymous fallback sign-in.");
-      }
-    }
-  } else {
-    // Check if campaign mode has been played before auto-signing anonymously
-    const localLvl = Number(localStorage.getItem('shikaku_campaign_level') || '1');
-    if (localLvl > 1) {
-      try {
-        const userCredential = await signInAnonymously(auth);
-        console.log("Firebase Auth signed in anonymously:", userCredential.user.uid);
-        localStorage.setItem('shikaku_player_uid', userCredential.user.uid);
-        return userCredential.user;
-      } catch (err) {
-        console.error("Anonymous sign in failed:", err);
-        const fallbackErrMsg = err instanceof Error ? err.message : String(err);
-        if (fallbackErrMsg.includes('auth/admin-restricted-operation')) {
-          window.dispatchEvent(new CustomEvent('shikaku_auth_error', {
-            detail: {
-              error: "Anonymous Authentication is currently disabled under your Firebase Console Project (photos-6e67c). Go to Authentication > Sign-In Method, add 'Anonymous' as a provider, and click Enable so guests can play!"
-            }
-          }));
-        }
-      }
-    } else {
-      console.log("No Google session and local campaign level is 1. Deferring anonymous sign-in until gameplay.");
     }
   }
   return null;
@@ -304,6 +247,7 @@ export function logoutGoogleProfile() {
   // Clear game-specific progress upon logout to prevent multi-account bleed
   localStorage.removeItem('shikaku_campaign_level');
   localStorage.removeItem('shikaku_stats');
+  localStorage.removeItem('shikaku_coins');
   
   // Clear any daily completed flags
   try {
@@ -330,25 +274,7 @@ export function logoutGoogleProfile() {
 }
 
 export async function ensureAnonymousUser(): Promise<any> {
-  if (!auth.currentUser) {
-    try {
-      const userCred = await signInAnonymously(auth);
-      localStorage.setItem('shikaku_player_uid', userCred.user.uid);
-      window.dispatchEvent(new Event('shikaku_auth_changed'));
-      return userCred.user;
-    } catch (err) {
-      console.error("ensureAnonymousUser failed:", err);
-      const fallbackErrMsg = err instanceof Error ? err.message : String(err);
-      if (fallbackErrMsg.includes('auth/admin-restricted-operation')) {
-        window.dispatchEvent(new CustomEvent('shikaku_auth_error', {
-          detail: {
-            error: "Anonymous Authentication is currently disabled under your Firebase Console Project (photos-6e67c). Go to Authentication > Sign-In Method, add 'Anonymous' as a provider, and click Enable so guests can play!"
-          }
-        }));
-      }
-    }
-  }
-  return auth.currentUser;
+  return null;
 }
 
 export function onAuthChanged(callback: (user: any) => void) {
@@ -565,6 +491,8 @@ export interface UserProgressData {
   displayName?: string;
   friends?: string[];
   coins?: number;
+  currentStreak?: number;
+  bestStreak?: number;
 }
 
 // Upload current local progress for backup and syncing
@@ -615,6 +543,9 @@ export async function uploadUserProgress(
   const coinsStr = localStorage.getItem('shikaku_coins') || '100';
   const coinsNum = parseInt(coinsStr, 10) || 100;
 
+  const currentStreak = stats?.currentStreak || 0;
+  const bestStreak = stats?.bestStreak || 0;
+
   if (auth.currentUser) {
     try {
       const userDocRef = doc(db, 'users', activeUserId);
@@ -622,6 +553,8 @@ export async function uploadUserProgress(
         userId: activeUserId,
         campaignLevel: campaignLevel || 1,
         stats: stats || {},
+        currentStreak,
+        bestStreak,
         dailyChallengesCompleted: completedDaily,
         displayName: resolvedName,
         playerId: playerId,
@@ -650,6 +583,8 @@ export async function uploadUserProgress(
       userId: activeUserId,
       campaignLevel,
       stats,
+      currentStreak,
+      bestStreak,
       dailyChallengesCompleted: completedDaily,
       displayName: resolvedName,
       coins: coinsNum
@@ -682,10 +617,21 @@ export async function fetchUserProgress(userId: string): Promise<UserProgressDat
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const data = docSnap.data();
+        const mergedStats = {
+          currentStreak: data.currentStreak !== undefined ? data.currentStreak : (data.stats && data.stats.currentStreak) || 0,
+          bestStreak: data.bestStreak !== undefined ? data.bestStreak : (data.stats && data.stats.bestStreak) || 0,
+          ...(data.stats || {})
+        };
+        // Explicitly force them within mergedStats structure
+        mergedStats.currentStreak = data.currentStreak !== undefined ? data.currentStreak : mergedStats.currentStreak;
+        mergedStats.bestStreak = data.bestStreak !== undefined ? data.bestStreak : mergedStats.bestStreak;
+
         return {
           exists: true,
           campaignLevel: data.campaignLevel || 1,
-          stats: data.stats || null,
+          stats: mergedStats,
+          currentStreak: mergedStats.currentStreak,
+          bestStreak: mergedStats.bestStreak,
           dailyChallengesCompleted: data.dailyChallengesCompleted || [],
           playerId: data.playerId || activeUserId.substring(0, 6).toUpperCase(),
           displayName: data.displayName || 'Unknown Player',
@@ -713,7 +659,24 @@ export async function fetchUserProgress(userId: string): Promise<UserProgressDat
     if (!res.ok) {
       throw new Error(`Server status ${res.status}`);
     }
-    return await res.json();
+    const data = await res.json();
+    if (data && data.exists) {
+      const mergedStats = {
+        currentStreak: data.currentStreak !== undefined ? data.currentStreak : (data.stats && data.stats.currentStreak) || 0,
+        bestStreak: data.bestStreak !== undefined ? data.bestStreak : (data.stats && data.stats.bestStreak) || 0,
+        ...(data.stats || {})
+      };
+      mergedStats.currentStreak = data.currentStreak !== undefined ? data.currentStreak : mergedStats.currentStreak;
+      mergedStats.bestStreak = data.bestStreak !== undefined ? data.bestStreak : mergedStats.bestStreak;
+
+      return {
+        ...data,
+        stats: mergedStats,
+        currentStreak: mergedStats.currentStreak,
+        bestStreak: mergedStats.bestStreak,
+      };
+    }
+    return data;
   } catch (err) {
     console.error("Failed to fetch synced user progress from server API:", err);
     return null;
