@@ -73,7 +73,10 @@ const INITIAL_STATS = {
 
 export default function App() {
   // Game state
-  const [gameState, setGameState] = useState<'menu' | 'playing' | 'tutorial' | 'teaser'>('menu');
+  const [gameState, setGameState] = useState<'menu' | 'playing' | 'tutorial' | 'teaser'>(() => {
+    const neverShowTeaser = localStorage.getItem('shikaku_never_show_teaser') === 'true';
+    return neverShowTeaser ? 'menu' : 'teaser';
+  });
   const [tutorialStep, setTutorialStep] = useState<number>(0);
   const [levelNumber, setLevelNumber] = useState<number>(1);
   const [difficulty, setDifficulty] = useState<Difficulty>('easy');

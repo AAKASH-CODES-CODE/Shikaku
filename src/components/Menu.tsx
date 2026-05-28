@@ -35,7 +35,7 @@ interface MenuProps {
   onStartCampaignLevel: (levelNum: number) => void;
   onExitGame?: () => void;
   hasCompletedTutorial?: boolean;
-  onPlayTeaser: () => void;
+  onPlayTeaser?: () => void;
 }
 
 export default function Menu({
@@ -245,21 +245,6 @@ export default function Menu({
         <p className="text-xs text-neutral-400 dark:text-neutral-500 font-mono tracking-widest uppercase">
           Divide into Rectangles
         </p>
-
-        {/* Cinematic Launch Teaser Trigger Banner */}
-        <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={onPlayTeaser}
-          className="mt-1 text-xs font-semibold px-4 py-1.5 bg-neutral-900 dark:bg-neutral-850 text-white rounded-full flex items-center gap-2 border border-neutral-800/80 shadow-sm active:scale-95 transition-all cursor-pointer group hover:border-blue-500 hover:shadow-[0_0_12px_rgba(0,122,255,0.15)]"
-        >
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-          </span>
-          <Video className="w-3.5 h-3.5 text-neutral-400 group-hover:text-blue-400 transition-colors" />
-          <span>Play Cinematic Launch Teaser</span>
-        </motion.button>
       </motion.div>      {/* Campaign Central Terminal */}
       <motion.div
         id="campaign-mode-box"

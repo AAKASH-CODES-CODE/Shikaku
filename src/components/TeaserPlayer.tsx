@@ -461,8 +461,37 @@ export default function TeaserPlayer({ onClose, onPlayGame, reducedMotion = fals
   const [currentScene, setCurrentScene] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [progress, setProgress] = useState<number>(0);
-  const [showRecordingGuide, setShowRecordingGuide] = useState<boolean>(true);
   const [isTeaserMuted, setIsTeaserMuted] = useState<boolean>(false);
+
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const [showPrefModal, setShowPrefModal] = useState<boolean>(false);
+  const [pendingExitType, setPendingExitType] = useState<'menu' | 'play' | null>(null);
+
+  const triggerExit = (type: 'menu' | 'play') => {
+    setIsPlaying(false);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    clearSoundTimeouts();
+    setPendingExitType(type);
+    setShowPrefModal(true);
+  };
+
+  const handleSelectPreference = (neverShowAgain: boolean) => {
+    if (neverShowAgain) {
+      localStorage.setItem('shikaku_never_show_teaser', 'true');
+    } else {
+      localStorage.removeItem('shikaku_never_show_teaser');
+    }
+    
+    if (pendingExitType === 'play') {
+      onPlayGame();
+    } else {
+      onClose();
+    }
+    setShowPrefModal(false);
+  };
 
   const soundTimeoutsRef = useRef<NodeJS.Timeout[]>([]);
 
@@ -517,9 +546,6 @@ export default function TeaserPlayer({ onClose, onPlayGame, reducedMotion = fals
   }>>([]);
   const [showHintPulse, setShowHintPulse] = useState<boolean>(false);
   const [showWinParticles, setShowWinParticles] = useState<boolean>(false);
-
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const scenes: Scene[] = [
     {
@@ -593,9 +619,9 @@ export default function TeaserPlayer({ onClose, onPlayGame, reducedMotion = fals
         if (currentScene < scenes.length - 1) {
           setCurrentScene((prev) => prev + 1);
         } else {
-          // Wrap around or stop
+          // Wrapped around / finished watching naturally! Show startup preference popup
           setIsPlaying(false);
-          setCurrentScene(scenes.length - 1);
+          triggerExit('menu');
         }
       }, activeScene.duration);
     };
@@ -777,26 +803,17 @@ export default function TeaserPlayer({ onClose, onPlayGame, reducedMotion = fals
       <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-blue-500/50 to-transparent" />
 
       {/* Header Controls */}
-      <header className="p-4 sm:p-6 w-full max-w-7xl mx-auto flex items-center justify-between z-10">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-2.5 w-2.5 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#007AFF] opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#007AFF]"></span>
-          </div>
-          <span className="text-xs font-mono font-extrabold uppercase tracking-[0.2em] text-neutral-400">
-            SHIKAKU Cinematic Promo Play
-          </span>
-        </div>
-
+      <header className="p-4 sm:p-6 w-full max-w-7xl mx-auto flex items-center justify-end z-10">
         <button
           onMouseEnter={() => playTeaserSFX.playButtonHover(isTeaserMuted)}
           onClick={() => {
             playTeaserSFX.playButtonClick(isTeaserMuted);
-            onClose();
+            triggerExit('menu');
           }}
-          className="p-2 rounded-full border border-neutral-800 text-neutral-400 hover:text-white bg-neutral-900/60 hover:bg-neutral-800 active:scale-95 transition-all cursor-pointer"
+          className="px-5 py-2.5 rounded-full border border-neutral-800 text-neutral-300 hover:border-neutral-500 hover:text-white bg-neutral-900/90 hover:bg-neutral-800 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 font-bold tracking-wide text-xs shadow-lg shadow-black/40"
         >
-          <X className="w-5 h-5" />
+          <span>Skip Video</span>
+          <ChevronRight className="w-3.5 h-3.5" />
         </button>
       </header>
 
@@ -996,7 +1013,7 @@ export default function TeaserPlayer({ onClose, onPlayGame, reducedMotion = fals
                             onMouseEnter={() => playTeaserSFX.playButtonHover(isTeaserMuted)}
                             onClick={() => {
                               playTeaserSFX.playButtonClick(isTeaserMuted);
-                              onPlayGame();
+                              triggerExit('play');
                             }}
                             className="w-full px-4 py-2 bg-[#007AFF] hover:bg-blue-600 text-white rounded-xl text-xs font-bold cursor-pointer transition-all active:scale-95 shadow-md shadow-blue-500/20 flex items-center justify-center gap-1.5"
                           >
@@ -1103,32 +1120,68 @@ export default function TeaserPlayer({ onClose, onPlayGame, reducedMotion = fals
         </div>
       </main>
 
-      {/* Recording Help Banner (So user knows how to capture the MP4 trailer) */}
+      {/* Minimal Footer Spacer */}
+      <div className="h-6" />
+
+      {/* Startup Preferences Popup Modal */}
       <AnimatePresence>
-        {showRecordingGuide && (
-          <footer className="w-full bg-neutral-900 border-t border-neutral-800">
-            <div className="max-w-4xl mx-auto px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-left">
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5 text-xs font-extrabold text-blue-400 font-sans">
-                  <Camera className="w-4 h-4 text-blue-400 animate-pulse" />
-                  <span>💡 PRO-TIPS FOR CREATING RECORDINGS</span>
+        {showPrefModal && (
+          <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-[100] p-4 font-sans select-none">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 15 }}
+              transition={{ type: "spring", damping: 25, stiffness: 350 }}
+              className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 sm:p-8 max-w-sm w-full text-center space-y-6 shadow-2xl relative overflow-hidden"
+            >
+              {/* Decorative top lighting glow */}
+              <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-blue-500/60 to-transparent" />
+
+              {/* Icon & Welcome */}
+              <div className="flex justify-center flex-col items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400">
+                  <Video className="w-6 h-6 animate-pulse" />
                 </div>
-                <p className="text-[11px] leading-relaxed text-neutral-400 font-medium">
-                  We designed this teaser in full realtime Vectors! To generate a perfect launch video for your store page, open your browser in a new tab, launch your favorite screen recorder (<strong>OSX Cmd+Shift+5</strong> or <strong>OBS Studio</strong>), and click play. The rendering is perfectly crisp, razor sharp, and runs at native 60fps frame rate.
+                <h3 className="text-lg font-extrabold text-white tracking-wide font-sans mt-1">
+                  Startup Video Setting
+                </h3>
+                <p className="text-xs text-neutral-400 px-2 leading-relaxed">
+                  Choose how Shikaku should behave next time you launch the game. You can always replay the intro later.
                 </p>
               </div>
-              <button
-                onMouseEnter={() => playTeaserSFX.playButtonHover(isTeaserMuted)}
-                onClick={() => {
-                  playTeaserSFX.playButtonClick(isTeaserMuted);
-                  setShowRecordingGuide(false);
-                }}
-                className="px-3.5 py-1.5 border border-neutral-800 hover:border-neutral-600 rounded-lg text-[10px] font-semibold text-neutral-400 hover:text-white transition-colors cursor-pointer shrink-0"
-              >
-                Dismiss Guide
-              </button>
-            </div>
-          </footer>
+
+              {/* Action Buttons with constraints: 
+                  - Bright colour for "never show the video again"
+                  - Dim light for "play video on every start-up"
+              */}
+              <div className="flex flex-col gap-3 pt-2">
+                {/* 1. Bright Color: "never show the video again" */}
+                <button
+                  onMouseEnter={() => playTeaserSFX.playButtonHover(isTeaserMuted)}
+                  onClick={() => {
+                    playTeaserSFX.playSuccess(isTeaserMuted);
+                    handleSelectPreference(true);
+                  }}
+                  className="w-full py-3.5 px-6 font-bold text-sm text-white rounded-xl bg-[#007AFF] hover:bg-blue-600 hover:scale-[1.02] active:scale-98 shadow-lg shadow-blue-500/25 transition-all duration-200 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Check className="w-4 h-4 text-white" />
+                  <span>never show the video again</span>
+                </button>
+
+                {/* 2. Dim Light: "play video on every start-up" */}
+                <button
+                  onMouseEnter={() => playTeaserSFX.playButtonHover(isTeaserMuted)}
+                  onClick={() => {
+                    playTeaserSFX.playButtonClick(isTeaserMuted);
+                    handleSelectPreference(false);
+                  }}
+                  className="w-full py-2.5 px-4 text-xs font-semibold text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800/40 border border-neutral-800 rounded-xl transition-all duration-150 cursor-pointer bg-neutral-950/20 active:scale-98"
+                >
+                  <span>play video on every start-up</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
